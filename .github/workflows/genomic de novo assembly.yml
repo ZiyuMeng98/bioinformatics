@@ -32,3 +32,14 @@ cd IDBA/
 fq2fa --filter --merge /home/train/00.incipient_data/data_for_genome_assembling/illumina.1.fastq /home/train/00.incipient_data/data_for_genome_assembling/illumina.2.fastq  illumina.fasta
 idba_ud -r illumina.fasta --mink 20 --maxk 100 --step 20
 python ~/commend/genome_seq_clear.py --seq_prefix idba out/contig.fa > idba.fasta
+
+
+#Canu
+#三代数据de novo
+mkdir -p /home/mengziyu/working/04.genome_assembling/Canu
+cd Canu
+mkdir lamda_HiFi
+opt/biosoft/miniconda3_for_pb-assembly/bin/ccs /home/train/00.incipient_data/data_for_genome_assembling/lambdaTINY_Sequel2/m54026_181219_010936_tiny.subreads.bam ccs.bam
+/opt/biosoft/miniconda3_for_pb-assembly/bin/bam2fasta -o ccs_reads -u ccs.bam
+canu -p out genomeSize=48000 useGrid=false -pacbio-hifi ccs_reads.fasta
+python3 ~/commend/canu_filter.py out.contigs.fasta genome.canu_a.fasta --filter_patterns "bubble=yes" "repeat=yes" "low_quality"
