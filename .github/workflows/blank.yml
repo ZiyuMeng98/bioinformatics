@@ -1,0 +1,34 @@
+#GCE
+mkdir -p /home/mengziyu/working/04.genome_assembling/GCE
+cd GCE/
+ls /home/train/00.incipient_data/data_for_genome_assembling/illumina.?.fastq > reads.list
+/opt/biosoft/gce-1.0.0/kmerfreq/kmer_freq_hash/kmer_freq_hash -k 21 -l reads.list -t 8 -i 80000000 -o 0 -p out > kmer_freq.log
+/opt/biosoft/gce-1.0.0/gce -f out.freq.stat -c 21 -g 301734211 -m 1 -D 8 -b 1 > out.table 2> out.log
+#若是杂合基因组测序数据，需要添加-H 1参数
+#杂合基因组通常指从一个二倍体或多倍体生物个体中测序得到的基因组数据，这个个体的一条染色体上的某个位置（基因座）可能存在两个不同的版本（等位基因）
+/opt/biosoft/gce-1.0.0/gce -f out.freq.stat -c 21 -g 301734211 -m 1 -D 8 -b 1 -H 1 > out.table 2> out.log
+#kmer图制作
+echo 'a <- read.table("11",header=TRUE);
+  library("ggplot2")
+  png(file="dep_num.png",bg="transparent")
+  qplot(dep,num,data=a,ylim=c(0,3e5),xlim=c(0,180),geom=c("line"))
+  dev.off()
+  png (file="dep_individual.png",bg="transparent")
+  qplot(dep,num*dep,data=a,ylim=c(0,1e7),xlim=c(0,180),geom=c("line"))
+  dev.off()' | R --vanilla --slave
+
+
+#Jellyfish and Genome
+mkdir -p /home/mengziyu/working/04.genome_assembling/GenomeScope2.0
+cd GenomeScope2.0/
+jellyfish count -C -m 21 -s 100000000 -t 8 -o mer_counts.jf /home/train/00.incipient_data/data_for_genome_assembling/illumina.?.fastq
+jellyfish histo -t 8 mer_counts.jf > mer_counts.histo
+/opt/biosoft/genomescope2.0-1.0.0/genomescope.R -i mer_counts.histo -o genomescope -k 21 -p 1 > ../genomescope.out
+
+
+#IDBA
+mkdir -p /home/mengziyu/working/04.genome_assembling/IDBA
+cd IDBA/
+fq2fa --filter --merge /home/train/00.incipient_data/data_for_genome_assembling/illumina.1.fastq /home/train/00.incipient_data/data_for_genome_assembling/illumina.2.fastq  illumina.fasta
+idba_ud -r illumina.fasta --mink 20 --maxk 100 --step 20
+python ~/commend/genome_seq_clear.py --seq_prefix idba out/contig.fa > idba.fasta
