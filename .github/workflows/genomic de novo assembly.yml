@@ -45,3 +45,8 @@ canu -p out genomeSize=48000 useGrid=false -pacbio-hifi ccs_reads.fasta
 #需要注意安装cilck包 python3 -m pip install click
 python3 ~/commend/canu_filter.py filter out.contigs.fasta genome.canu_a.fasta -p bubble=yes -p repeat=yes -p low_quality
 python3 ../genome_seq_clear.py --seq_prefix canu genome.canu_p.fasta > canu.fasta
+mkdir /home/stu_wangyanan/working/04.genome_assembling/Canu/Malassezia_sympodialis
+cd ../Malassezia_sympodialis/
+/opt/biosoft/miniconda3_for_pb-assembly/bin/bam2fasta -o subreads -u /home/train/00.incipient_data/data_for_genome_assembling/m150226_221858_42237.subreads.bam
+canu -p out genomeSize=8000000 useGrid=false -pacbio-raw subreads.fasta &> canu.log
+python3 ../genome_seq_clear.py --seq_prefix canu out.contigs.fasta > canu.fasta
