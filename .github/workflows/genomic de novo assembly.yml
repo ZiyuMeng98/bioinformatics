@@ -42,4 +42,6 @@ mkdir lamda_HiFi
 opt/biosoft/miniconda3_for_pb-assembly/bin/ccs /home/train/00.incipient_data/data_for_genome_assembling/lambdaTINY_Sequel2/m54026_181219_010936_tiny.subreads.bam ccs.bam
 /opt/biosoft/miniconda3_for_pb-assembly/bin/bam2fasta -o ccs_reads -u ccs.bam
 canu -p out genomeSize=48000 useGrid=false -pacbio-hifi ccs_reads.fasta
-python3 ~/commend/canu_filter.py out.contigs.fasta genome.canu_a.fasta --filter_patterns "bubble=yes" "repeat=yes" "low_quality"
+#需要注意安装cilck包 python3 -m pip install click
+python3 ~/commend/canu_filter.py filter out.contigs.fasta genome.canu_a.fasta -p bubble=yes -p repeat=yes -p low_quality
+python3 ../genome_seq_clear.py --seq_prefix canu genome.canu_p.fasta > canu.fasta
