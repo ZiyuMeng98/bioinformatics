@@ -73,3 +73,10 @@ ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Mal
 /opt/biosoft/miniconda3_for_pb-assembly/bin/bam2fasta -o subreads -u /home/train/00.incipient_data/data_for_genome_assembling/m150226_221858_42237.subreads.bam
 python3 purge_dups_pipl.py --CPU 2 --minimap2_read "-I 4G -t 4 -x map-pb" --minimap2_self "-I 4G -t 4 -x asm5 -D -P" --peak 45 genome.fasta subreads.fasta
 python3 genome_seq_clear.py --seq_prefix purge_dups purge_dups.tmp/purged.fa > purge_dups.fasta
+
+
+#Hi-C
+mkdir -p /home/mengziyu/working/04.genome_assembling/Hic
+cd Hic/
+mkdir e.Juicer
+cd e.Juicer
