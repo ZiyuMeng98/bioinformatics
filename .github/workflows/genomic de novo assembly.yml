@@ -34,10 +34,11 @@ idba_ud -r illumina.fasta --mink 20 --maxk 100 --step 20
 python3 ~/commend/genome_seq_clear.py --seq_prefix idba out/contig.fa > idba.fasta
 
 
-#Canu和Hifisam需要配置好miniconda的环境
+#Canu、Hifisam和purge_dups需要配置好miniconda的环境
 conda create -n pb-assembly
 conda activate pb-assembly
 conda install -c bioconda pbccs
+conda install -c bioconda bam2fastx=1.3.0
 #Canu
 #三代数据de novo
 mkdir -p /home/mengziyu/working/04.genome_assembling/Canu
@@ -63,3 +64,12 @@ cd Hifisam
 /opt/biosoft/miniconda3_for_pb-assembly/bin/bam2fasta -o ccs_reads -u ccs.bam
 hifiasm -o hifiasm.asm -t 4 -l 0 ccs_reads.fasta
 python3 hifiasm_filter.py hifiasm.asm.bp.p_ctg.gfa hifiasm.asm.fasta
+
+
+#purge_dups
+mkdir -p /home/mengziyu/working/04.genome_assembling/purge_dups
+cd purge_dups/
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/canu.fasta genome.fasta
+/opt/biosoft/miniconda3_for_pb-assembly/bin/bam2fasta -o subreads -u /home/train/00.incipient_data/data_for_genome_assembling/m150226_221858_42237.subreads.bam
+python3 purge_dups_pipl.py --CPU 2 --minimap2_read "-I 4G -t 4 -x map-pb" --minimap2_self "-I 4G -t 4 -x asm5 -D -P" --peak 45 genome.fasta subreads.fasta
+python3 genome_seq_clear.py --seq_prefix purge_dups purge_dups.tmp/purged.fa > purge_dups.fasta
