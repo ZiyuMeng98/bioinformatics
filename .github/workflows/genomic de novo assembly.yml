@@ -31,9 +31,13 @@ mkdir -p /home/mengziyu/working/04.genome_assembling/IDBA
 cd IDBA/
 fq2fa --filter --merge /home/train/00.incipient_data/data_for_genome_assembling/illumina.1.fastq /home/train/00.incipient_data/data_for_genome_assembling/illumina.2.fastq  illumina.fasta
 idba_ud -r illumina.fasta --mink 20 --maxk 100 --step 20
-python ~/commend/genome_seq_clear.py --seq_prefix idba out/contig.fa > idba.fasta
+python3 ~/commend/genome_seq_clear.py --seq_prefix idba out/contig.fa > idba.fasta
 
 
+#Canu和Hifisam需要配置好miniconda的环境
+conda create -n pb-assembly
+conda activate pb-assembly
+conda install -c bioconda pbccs
 #Canu
 #三代数据de novo
 mkdir -p /home/mengziyu/working/04.genome_assembling/Canu
@@ -50,3 +54,12 @@ cd ../Malassezia_sympodialis/
 /opt/biosoft/miniconda3_for_pb-assembly/bin/bam2fasta -o subreads -u /home/train/00.incipient_data/data_for_genome_assembling/m150226_221858_42237.subreads.bam
 canu -p out genomeSize=8000000 useGrid=false -pacbio-raw subreads.fasta &> canu.log
 python3 ../genome_seq_clear.py --seq_prefix canu out.contigs.fasta > canu.fasta
+
+
+#Hifisam
+mkdir -p /home/mengziyu/working/04.genome_assembling/Hifisam
+cd Hifisam
+/opt/biosoft/miniconda3_for_pb-assembly/bin/ccs /home/train/00.incipient_data/data_for_genome_assembling/lambdaTINY_Sequel2/m54026_181219_010936_tiny.subreads.bam ccs.bam
+/opt/biosoft/miniconda3_for_pb-assembly/bin/bam2fasta -o ccs_reads -u ccs.bam
+hifiasm -o hifiasm.asm -t 4 -l 0 ccs_reads.fasta
+python3 hifiasm_filter.py hifiasm.asm.bp.p_ctg.gfa hifiasm.asm.fasta
