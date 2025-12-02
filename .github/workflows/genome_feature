@@ -32,4 +32,4 @@ ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Mal
 misa.pl genome.fasta
 #使用自行编写的程序调用primer3进行引物批量设计
 python3 p3_settings_file.py
-misa_primer3.pl --CPU 8 --gff3_out misa_primer3.gff3 --p3_setting_file p3_settings_file genome.fasta.misa genome.fasta > misa_primer3.out
+python3 misa_primer3.py --cpu 8 --gff3_out misa_primer3.gff3 --p3_setting_file p3_settings_file genome.fasta.misa genome.fasta > misa_primer3.out
