@@ -1,0 +1,35 @@
+#统计N50和GC含量
+mkdir -p /home/mengziyu/working/05.genome_feature/sequence_statistics
+cd /home/mengziyu/working/05.genome_feature/sequence_statistics
+#统计最长序列长度、最短序列长度、基因组总大小、N碱基含量、GC比例、N50
+python3 sequence_statistics.py /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta
+#分析端粒序列，检测染色体序列完整性
+python3 search_telomere_in_genome.py --repeat-unit CACTTAA /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta >> telomere_info.txt
+
+#RepeatModeler重复序列分析
+mkdir -p /home/mengziyu/working/05.genome_feature/repeat_analysis
+cd /home/mengziyu/working/05.genome_feature/repeat_analysisrepeat_analysis
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+famdb.py info
+famdb.py lineage -ad root > lineage.txt 
+mkdir repeatMasker
+RepeatMasker -pa 4 -e ncbi -species fungi -dir repeatMasker/ -gff -no_is genome.fasta
+mkdir repeatModeler
+cd repeatModeler
+BuildDatabase -name species -engine ncbi ../genome.fasta
+RepeatMasker -pa 4 -e ncbi -lib species-families.fa -dir ./ -gff ../genome.fasta
+cd ../
+python3 merge_repeatMasker_out.py repeatMasker/genome.fasta.out repeatModeler/genome.fasta.out > genome.repeat.stats
+python3 maskedByGff.py genome.repeat.gff3 genome.fasta --mask_type softmask > genome.softmask.fasta
+python3 maskedByGff.py genome.repeat.gff3 genome.fasta --mask_type hardmaskN > genome.softmask.fasta
+
+
+#SSR分析和批量引物设计
+mkdir -p /home/mengziyu/working/05.genome_feature/SSR_detectin_and_primer_design
+cd SSR_detectin_and_primer_design
+cp /opt/biosoft/Misa_Primer3/misa.ini .
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta  genome.fasta
+misa.pl genome.fasta
+#使用自行编写的程序调用primer3进行引物批量设计
+python3 p3_settings_file.py
+misa_primer3.pl --CPU 8 --gff3_out misa_primer3.gff3 --p3_setting_file p3_settings_file genome.fasta.misa genome.fasta > misa_primer3.out
