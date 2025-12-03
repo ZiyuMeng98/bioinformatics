@@ -6,6 +6,7 @@ python3 sequence_statistics.py /home/train/00.incipient_data/data_for_genome_ass
 #分析端粒序列，检测染色体序列完整性
 python3 search_telomere_in_genome.py --repeat-unit CACTTAA /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta >> telomere_info.txt
 
+
 #RepeatModeler重复序列分析
 mkdir -p /home/mengziyu/working/05.genome_feature/repeat_analysis
 cd /home/mengziyu/working/05.genome_feature/repeat_analysisrepeat_analysis
@@ -33,3 +34,18 @@ misa.pl genome.fasta
 #使用自行编写的程序调用primer3进行引物批量设计
 python3 p3_settings_file.py
 python3 misa_primer3.py --cpu 8 --gff3_out misa_primer3.gff3 --p3_setting_file p3_settings_file genome.fasta.misa genome.fasta > misa_primer3.out
+
+
+#非编码RNA分析
+#tRNAscan-SE进行tRNA分析
+mkdir -p /home/mengziyu/working/05.genome_feature/tRNAscan-SE
+cd tRNAscan-SE/
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+tRNAscan-SE -o tRNA.out -f tRNA.ss -m tRNA.stats genome.fasta
+python3 tRNAscanSE2GFF3.py tRNA.out tRNA.ss > tRNA.gff3
+
+#Rfam进行非编码基因簇分析
+mkdir -p /home/mengziyu/working/05.genome_feature/Rfam
+cd Rfam
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+cmsearch --cut_ga --nohmmonly --rfam --noali --cpu 9 --tblout rfam_out.tab /opt/biosoft/infernal-1.1.3/Rfam.cm genome.fasta > rfam_out.txt
