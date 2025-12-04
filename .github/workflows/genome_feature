@@ -53,4 +53,10 @@ python3 Rfam_rRNA_stats.py rfam_out.tab
 python3 Rfam_miRNA_stats.py rfam_out.tab /opt/biosoft/infernal-1.1.3/Rfam.cm
 python3 Rfam_snRNA_stats.py rfam_out.tab ~/software/snoRNA_type.txt
 
-#
+#次级代谢基因簇
+mkdir -p /home/mengziyu/working/05.genome_feature/antiSMASH
+cd antiSMASH
+ln -s /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Malassezia_sympodialis_V01.GeneModels.gbf genome.gbk
+export PATH=/opt/biosoft/miniconda3_for_antiSMASH/bin:$PATH
+source activate antismash
+antismash -c 8 --taxon fungi genome.gbk
