@@ -49,3 +49,8 @@ mkdir -p /home/mengziyu/working/05.genome_feature/Rfam
 cd Rfam
 ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
 cmsearch --cut_ga --nohmmonly --rfam --noali --cpu 9 --tblout rfam_out.tab /opt/biosoft/infernal-1.1.3/Rfam.cm genome.fasta > rfam_out.txt
+python3 Rfam_rRNA_stats.py rfam_out.tab
+python3 Rfam_miRNA_stats.py rfam_out.tab /opt/biosoft/infernal-1.1.3/Rfam.cm
+python3 Rfam_snRNA_stats.py rfam_out.tab ~/software/snoRNA_type.txt
+
+#
