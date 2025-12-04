@@ -59,4 +59,4 @@ cd antiSMASH
 ln -s /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Malassezia_sympodialis_V01.GeneModels.gbf genome.gbk
 export PATH=/opt/biosoft/miniconda3_for_antiSMASH/bin:$PATH
 source activate antismash
-antismash -c 8 --taxon fungi genome.gbk
+antismash -c 8 --taxon fungi genome.gbk #生成结果在生成物种名文件夹下的index.html文件中，用网页查看结果
