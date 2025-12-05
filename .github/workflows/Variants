@@ -1,0 +1,29 @@
+#GATK
+#bam文件准备
+java -jar /opt/biosoft/picard-tools/picard.jar AddOrReplaceReadGroups I=/home/train/06.reads_aligment/bowtie2/V1.sam O=V1.bam SO=coordinate ID=V1 LB=V1 PL=Illumina PU=run SM=V1
+java -jar /opt/biosoft/picard-tools/picard.jar AddOrReplaceReadGroups I=/home/train/06.reads_aligment/bowtie2/V2.sam O=V2.bam SO=coordinate ID=V2 LB=V2 PL=Illumina PU=run SM=V2
+for BAM in *.bam;do samtools index "$BAM";done
+#准备基因组文件
+ln -s /home/train/06.reads_aligment/hisat2/genome.fasta ./
+samtools faidx genome.fasta
+java -jar /opt/biosoft/picard-tools/picard.jar CreateSequenceDictionary R=genome.fasta O=genome.dict
+gatk HaplotypeCaller -R genome.fasta -I V1.bam -ERC GVCF -O V1.g.vcf --pcr-indel-model CONSERVATIVE --sample-ploidy 2 --min-base-quality-score 10 --kmer-size 10 --kmer-size 25
+gatk HaplotypeCaller -R genome.fasta -I V2.bam -ERC GVCF -O V2.g.vcf --pcr-indel-model CONSERVATIVE --sample-ploidy 2 --min-base-quality-score 10 --kmer-size 10 --kmer-size 25
+gatk CombineGVCFs -R genome.fasta -O combined.g.vcf -V V1.g.vcf -V V2.g.vcf
+gatk GenotypeGVCFs -R genome.fasta -O variants.raw.vcf -V combined.g.vcf --sample-ploidy 2
+gatk VariantFiltration -R genome.fasta -O variants.filter.vcf -V variants.raw.vcf --filter-name FilterQual --filter-expression "QUAL < 30.0" \
+                                                                                  --filter-name FiltgerQD --filter-expression "QD < 2.0" \
+                                                                                  --filter-name FilterMQ --filter-expression "MQ < 40.0" \
+                                                                                  --filter-name FilterSOR --filter-expression "SOR > 3.0" \
+                                                                                  --filter-name FilterFS --filter-expression "FS > 60.0" \
+                                                                                  --filter-name FilterMQRankSum --filter-expression "MQRankSun < -12.5" \
+                                                                                  --filter-name FilterReadPosRankSun --filter-expression "ReadPosRankSun < -8.0" \
+                                                                                  --filter-name FilterBaseQRankSun --filter-expression "BaseQRankSun < -10.0"
+grep -v -P "\tFilter" variants.filter.vcf > variants.vcf
+#根据INDEL信息批量设计引物
+mkdir -p /home/mengziyu/working/07.variants/INDEL_primer_design
+cd ../INDEL_primer_design/
+ln -s ../GATK/genome.* .
+gatk SelectVariants -R genome.fasta -V ../GATK/variants.vcf -O INDELs.vcf --select-type-to-include INDEL
+ln -s /home/train/05.genome_feature_analysis/SSR_detecting_and_primer_design/p3_settings_file .
+python3 VCF_InDel_primer3.py INDELs.vcf genome.fasta --p3-setting-file p3_settings_file --cpu 4 --gff3-out VCF_InDel_primer3.gff3 > VCF_InDel_primer3.out
