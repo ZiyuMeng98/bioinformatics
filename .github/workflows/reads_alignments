@@ -1,0 +1,12 @@
+#hisat2
+mkdir -p /home/mengziyu/working/06.reads_aligment/hisat2
+cd hisat2/
+ln -s /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/genome.fasta genome.fasta
+ln -s /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/*.fastq ./
+ln -s /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/genome.gtf ./
+python3 hisat2_variants_vcf_codes.py /home/train/00.incipient_data/data_for_variants_calling/variants.vcf > variants.vcf
+/opt/biosoft/hisat2-2.1.0/hisat2_extract_splice_sites.py genome.gtf > splitSites.txt
+/opt/biosoft/hisat2-2.1.0/hisat2_extract_exons.py genome.gtf > exonSites.txt
+python3 hisat2_extract_snps_vcf.py variants.vcf > variants.snp
+hisat2-build -p 4 --snp variants.snp --ss splitSites.txt --exon exonSites.txt genome.fasta genome
+sh command.hisat2.sh
