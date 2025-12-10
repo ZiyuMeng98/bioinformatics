@@ -1,0 +1,8 @@
+#IsoSeq3利用PacBio数据进行全长转录组分析
+mkdir -p /home/mengziyu/working/08.RNA-seq_analysis_by_trinity/IsoSeq
+cd IsoSeq
+#将subreads转换成ccs数据
+export PATH=/home/mengziyu/smrtlink/smrtcmds/bin/:$PATH
+samtools view -h /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/m54086_170204_081430.subreads.bam | head -n 10000 | samtools view -b > m54086_170204_081430.subreads.bam
+pbindex m54086_170204_081430.subreads.bam
+ccs m54086_170204_081430.subreads.bam m54086_170204_081430.ccs.bam --min-passes 3 --min-rq 0.99 --min-rq 0.99 --min-rq 0.99
