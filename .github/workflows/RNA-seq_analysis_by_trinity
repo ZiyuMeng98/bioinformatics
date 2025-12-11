@@ -53,4 +53,5 @@ samtools merge -@ 4 merged.bam /home/train/06.reads_aligment/hisat2/*.sam
 samtools sort -o sorted.merged.bam merged.bam
 #对排序后文件构建索引
 samtools index sorted.merged.bam
-Trinity --max_memory 2G --SS_lib_type RF --CPU 16 --jaccard_clip --normalize_reads --genome_guided_bam merged.bam --genome_guided_max_intron 10000 --output trinity_genomeGuided --bflyCalculateCPU &> trinity_genomeGuided.log
+Trinity --max_memory 30G --SS_lib_type RF --CPU 16 --jaccard_clip --normalize_reads --genome_guided_bam sorted.merged.bam --genome_guided_max_intron 10000 --output trinity_genomeGuided --bflyCalculateCPU &> trinity_genomeGuided.log
+/opt/biosoft/Trinity-v2.11.0/util/TrinityStats.pl trinity_genomeGuided/Trinity-GG.fasta > trinity_genomeGuided/Trinity-GG.fasta.stats
