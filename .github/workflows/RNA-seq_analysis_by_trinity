@@ -15,6 +15,9 @@ AAGCAGTGGTATCAACGCAGAGTACATGGGG
 GTACTCTGCGTTGATACCACTGCTT' > barcoded_primers.fasta
 lima m54086_170204_081430.ccs.bam barcoded_primers.fasta m54086_170204_081430.lima.bam --isoseq --no-pbi --peek-guess
 #安装isoseq3
+conda install hcc::smrtlink-tools
+"""
+以下可能没用
 conda update conda
 conda create -n isoseq3  python=2.7 anaconda
 conda activate isoseq3
@@ -22,7 +25,8 @@ conda install -n isoseq3 biopython
 conda install -n isoseq3 -c http://conda.anaconda.org/cgat bx-python
 conda install -n isoseq3 -c bioconda isoseq3
 conda install -n isoseq3 -c bioconda bamtools  
-conda install -n isoseq3 -c bioconda pysam     
+conda install -n isoseq3 -c bioconda pysam
+"""
 #去除polyA和合体序列，得到FLNC序列
 isoseq3 refine m54086_170204_081430*lima*.bam barcoded_primers.fasta m54086_170204_081430.flnc.bam --require-polya
 #对FLNC reads进行聚类，得到全长转录本序列信息
@@ -44,3 +48,9 @@ Trinity --left A.1.fastq,B.1.fastq,C.1.fastq,D.1.fastq,E.1.fastq,F.1.fastq,G.1.f
 python3 extract_longest_isoforms_from_TrinityFasta.py trinity_denovo/Trinity.fasta > trinity_denovo/unigene.longest.fasta
 
 #trinity进行有参转录组组装
+samtools merge -@ 4 merged.bam /home/train/06.reads_aligment/hisat2/*.sam
+#对bam文件进行排序，后续trinity有参组装
+samtools sort -o sorted.merged.bam merged.bam
+#对排序后文件构建索引
+samtools index sorted.merged.bam
+Trinity --max_memory 2G --SS_lib_type RF --CPU 16 --jaccard_clip --normalize_reads --genome_guided_bam merged.bam --genome_guided_max_intron 10000 --output trinity_genomeGuided --bflyCalculateCPU &> trinity_genomeGuided.log
