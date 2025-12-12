@@ -62,3 +62,56 @@ mkdir -p /home/mengziyu/working/08.RNA-seq_analysis_by_trinity/exp_cal
 cd exp_cal
 #准备转录组测序的索引文件
 /opt/biosoft/Trinity-v2.11.0/util/align_and_estimate_abundance.pl --transcripts ../trinity_denovo/Trinity.fasta --est_method RSEM --aln_method bowtie --output_dir ./ --prep_reference
+#进行表达量计算
+sh command.align_and_estimate_abundance.sh
+for file in */RSEM.isoforms.results; do
+    sample=$(dirname "$file")
+    cp "$file" "${sample}.isoforms.results"
+done
+
+#根据各个样品表达量，得到总的表达量矩阵，同时根据表达量去除假阳性序列
+python3 extract_trinity_unigene_by_isofroms_expression_and_orf.py Trinity.fasta *.isoforms.results
+#差异表达分析
+mkdir -p /home/mengziyu/working/08.RNA-seq_analysis_by_trinity/diff_exp
+cd /home/mengziyu/working/08.RNA-seq_analysis_by_trinity/diff_exp
+#得到表达量matrix文件
+ln -s ../exp_cal/out.gene_rawCounts.matrix gene.rawCount.matrix
+ln -s ../exp_cal/out.gene_TPM.not_cross.matrix gene.TPM.not_cross.matrix
+/opt/biosoft/Trinity-v2.11.0/util/support_scripts/run_TMM_scale_matrix.pl --matrix gene.TPM.not_cross.matrix > gen.TPM.TMM.matrix
+#进行差异表达分析，注意左边AB为编组，右侧ABCDEF为样本名
+echo -e "A\tA
+A\tB
+A/tC
+B\tD
+B\tE
+B\tF
+B\tG" > samples.txt
+/opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix gene.rawCount.matrix --method DESeq2 --samples_file samples.txt --output DESeq2.genes.dir
+"""
+#如果上述命令显示内存不足， *** caught segfault ***
+#                          address (nil), cause 'memory not mapped'
+#输入如下
+export R_MAX_VSIZE=32Gb
+export R_MAX_NUM_DLLS=450
+export R_MAX_MEM_SIZE=32Gb
+export OMP_NUM_THREADS=2
+export OPENBLAS_NUM_THREADS=2
+export MKL_NUM_THREADS=2
+"""
+cd edgeR.genes.dir
+/opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/analyze_diff_expr.pl --matrix ../gene.TPM.not_cross.matrix -P 0.001 -C 2 --samples ../samples.txt
+/opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/analyze_diff_expr.pl --matrix ../gene.TPM.not_cross.matrix -P 0.01 -C 1 --samples ../samples.txt --order_columns_by_samples_file
+#根据距离结果进行分类
+#自动分类
+/opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/define_clusters_by_cutting_tree.pl --Ptree 80 -R diffExpr.P0.01_C1matrix.RData
+"""
+#手动分类
+R
+>load("diffExpr.P0.01_C1.matrix.RData")
+>source("/opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/R/manually_define_clusters.R")
+>manually_define_clusters(hc_genes,data)
+#然后左键点击选择子类，右键结束选择
+#结果生成了文件夹manually_define_clusters_2，其中2表示手动分成了两类
+cd manually_defined_clusters_2
+#对每类结果进行趋势线的绘制
+/opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/plot_expression_patterns.pl cluster_*
