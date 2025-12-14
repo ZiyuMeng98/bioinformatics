@@ -115,3 +115,21 @@ R
 cd manually_defined_clusters_2
 #对每类结果进行趋势线的绘制
 /opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/plot_expression_patterns.pl cluster_*
+
+
+#Transdecoder预测蛋白质编码区
+mkdir -p /home/mengziyu/working/08.RNA-seq_analysis_by_trinity/transdecoder
+cd transdecoder
+ln -s ../trinity/exp_cal/Trinity.fasta Unigene.fasta
+#首先根据6个读码框翻译得到蛋白序列
+TransDecoder.LongOrfs -t Unigene.fasta -m 100
+perl -pe 's/^>(\S+).*/>$1/' Unigene.fasta.transdecoder_dir/longest_orf.pep > longest_orfs.pep
+#然后，将ORF蛋白序列分别使用两种方法比对到两种公共数据库，能比对上的序列则表示对应转录本序列具有较大的可能性存在同源基因，即具有较大的可能性存在编码基因（可选）
+#比对到SwissProt数据库
+wget ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz -P ~/software/
+gzip -dc /home/mengziyu/software/uniprot_sprot.fasta.gz > uniprot_sprot.fasta
+diamond makedb --threads 8 --db uniprot_sprot --in uniprot_sprot.fasta
+diamond blastp --db uniprot_sprot --query longest_orfs.pep --out blast.xml --outfmt 5 --sensitive --max-target-seqs 20 --evalue 1e-5 --id 20 --tmpdir /dev/shm --index-chunks 1
+#比对到pfam数据库
+python3 para_hmmscan.py --cpu 4 --out pfam --chunk 30 --hmmscan-cpu 4 -evalue1 1e-5 longest_orfs.pep
+TransDecoder.Predict -t Unigene.fasta --retain_pfam_hits pfam.domtbl --retain_blastp_hits blast.outfmt6
