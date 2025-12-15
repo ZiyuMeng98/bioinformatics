@@ -1,1 +1,33 @@
+#Cufflinks转录组表达量分析
+mkdir -p /home/mengziyu/working/09.RNA_seq_analysis/cufflinks
+cd /home/mengziyu/working/09.RNA_seq_analysis/cufflinks
+ln -s /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/genome.fasta ./
+ln -s /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/genome.gtf ./
+sh command.extract_unique.sh
+#使用cufflinks进行转录本组装（推荐使用hisat2比对，不进行这一步）
+for i in *.bam; do sample=${i%.bam};  echo "cufflinks -o cufflinkls/$sample -p 4 -g genome.gtf -b genome.fasta -u -L $sample $sample.bam"; done > command.cufflinks.sh
+sh command.cufflinks.sh
+#使用cuffmerge整合多个样品转录本信息，得到转录本序列更完整数量更多的GTF文件
+mkdir -p /home/mengziyu/working/09.RNA_seq_analysis/cufflinks/cuffmerge
+cd cuffmerge
+ls ../cufflinks/*/transcripts.gtf > assembly_gtf_list.txt
+cuffmerge -o ./ -p 4 -s ../genome.fasta assembly_gtf_list.txt
+#若有需要，可以使用cuffcompare比较cufflinks gtf和ref gtf，检测标准转录本信息的准确性
+mkdir -p /home/mengziyu/working/09.RNA_seq_analysis/cufflinks/cuffcompare
+cd cuffcompare
+ln -s ../cufflinks/A/transcripts.gtf ./
+cuffcompare -r ../genome.gtf  -s ../genome.fasta transcripts.gtf
+#统计参考gtf和cufflinks gtf转录本的比较情况
+python3 analysis_cuffcompare.py cuffcmp.transcripts.gtf.tmap
+python3 analysis_cuffcompare.py cuffcmp.transcripts.gtf.refmap
 
+#使用cuffquant进行表达量计算，生成二进制结果文件
+cd /home/mengziyu/working/09.RNA_seq_analysis/cufflinks
+sh cuffquant.sh
+
+#使用cuffnorm进行表达量计算，生成文本结果文件
+cd ../
+sh cuffnorm.sh
+#合并所有样品的raw count数据，得到raw count表达量矩阵文件
+cd /home/mengziyu/working/09.RNA_seq_analysis/cufflinks/cuffnorm
+python3 matrix_constructed_from_cuffnorm.py ?/genes.count_table > genes.count_table.matrix
