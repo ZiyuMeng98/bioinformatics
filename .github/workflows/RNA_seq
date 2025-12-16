@@ -52,4 +52,13 @@ echo -e "S4\tA
 > S2\tG" > samples.txt
 /opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix gene.rawCount.matrix --method edgeR --samples samples.txt --output edgeR_out
 /opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix gene.rawCount.matrix --method DESeq2 --samples samples.txt --output DESeq2_out
-python3 combine_multi_DEG_results.py --out_dir edgeR_DESeq2 --matrix gene.TPM.TMM.matrix --sample_file samples.txt edgeR_out/ DESeq2_out/
+perl combine_multi_DEG_results.pl --out_dir edgeR_DESeq2 --matrix gene.TPM.TMM.matrix --sample_file samples.txt edgeR_out/ DESeq2_out/
+cd edgeR_DESeq2/
+cat *.subset | cut -f 1 | sort | uniq | perl -e '<>; while (<>) { print }' > all_DEG.list
+python3 gene_to_tpm.py ../gene.TPM.TMM.matrix > DEG.TPM.TMM.matrix
+#不进行聚类绘图
+/opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/PtR --matrix DEG.TPM.TMM.matrix --samples ../samples.txt --heatmap --heatmap_scale_limits "-3,3" --heatmap_colorscheme 'green,black,red' --log2 --center_rows --gene_clust "none" --sample_clust "none" --save
+#2为聚类数量，手动设置
+Rscript cluster.R DEG.TPM.TMM.matrix ../samples.txt 2
+#自动聚类
+Rscript auto_cluster.R DEG.TPM.TMM.matrix ../samples.txt
