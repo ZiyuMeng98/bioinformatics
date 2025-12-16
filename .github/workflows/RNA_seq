@@ -31,3 +31,18 @@ sh cuffnorm.sh
 #合并所有样品的raw count数据，得到raw count表达量矩阵文件
 cd /home/mengziyu/working/09.RNA_seq_analysis/cufflinks/cuffnorm
 python3 matrix_constructed_from_cuffnorm.py ?/genes.count_table > genes.count_table.matrix
+#将raw counts标准化，转换为TPM数据
+sed -i 's/tracking_id//' genes.count_table.matrix
+python3 get_gene_max_cDNA_length_from_gtf.py ../genome.gtf > gene_max_cDNA_length.txt
+python3 filter_raw_count_matrix.py genes.count_table.matrix gene_max_cDNA_length.txt 10 3 > genes.count_table.filtered.matrix 2> genes.count_table.filtered.stats
+python3 rawCounts2tpm.py genes.count_table.filtered.matrix ../genome.gtf > genes.TPM_notCross.matrix
+/opt/biosoft/Trinity-v2.11.0/util/support_scripts/run_TMM_scale_matrix.pl --matrix genes.TPM_notCross.matrix > genes.TPM_Cross.matrix
+#计算样品间的相关系数
+
+#使用cuffdiff进行差异表达分析
+cd /home/mengziyu/working/09.RNA_seq_analysis/cufflinks
+cuffdiff --no-update-check -o cuffdiff -p 16 -L S4,S2 -b genome.fasta -u genome.gtf cuffquant/A/abundances.cxb,cuffquant/B/abundances.cxb,cuffquant/C/abundances.cxb cuffquant/D/abundances.cxb,cuffquant/E/abundances.cxb,cuffquant/F/abundances.cxb,cuffquant/G/abundances.cxb
+python3 parsing_cuffdiff_out.py cuffdiff/gene_exp.diff cuffdiff/DEG
+cd cuffdiff/DEG/
+python3 tpm_corss_to_DEG.py DEG.matrix ../../cuffnorm/genes.TPM_Cross.matrix
+/opt/biosoft/Trinity-v2.11.0/Analysis/DifferentialExpression/PtR --matrix DEG.matrix --heatmap --heatmap_scale_limits "-3,3" --log2 --center_rows --heatmap_colorscheme 'green,black,red'
