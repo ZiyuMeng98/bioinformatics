@@ -1,0 +1,33 @@
+#PASA
+mkdir -p /home/mengziyu/working/10.gene_prediction/pasa
+cd /home/mengziyu/working/10.gene_prediction/pasa
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+#将RNA-Seq de novo组装序列和genome-guided组装序列合并到一个文件中
+cat /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Trinity*fasta > transripts.fasta
+python3 pasa_get_seq_name.py /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Trinity.fasta > tdn.accs
+#对转录本序列进行尾部截短（end-trimming，包括vector,adaptor,primer,polyA/T尾巴）
+/opt/biosoft/PASApipeline.v2.4.1/bin/seqclean transripts.fasta -v /opt/biosoft/PASApipeline.v2.4.1/UniVec/UniVec
+#生成比对配置文件
+cp /opt/biosoft/PASApipeline.v2.4.1/pasa_conf/pasa.alignAssembly.Template.txt alignassembly.config
+DATE=$(date +%Y%m%d%H%M%S)
+USER=$(whoami)
+sed -i "s/^DATABASE=.*/DATABASE=pasa_${DATE}_${USER}/" alignassembly.config
+#生成MySQL数据库及表
+/opt/biosoft/PASApipeline.v2.4.1/scripts/create_mysql_cdnaassembly_db.dbi -r -c alignassembly.config -S /opt/biosoft/PASApipeline.v2.4.1/schema/cdna_alignment_mysqlschema
+#运行PASA主程序，将转录本序列比对到基因组上，得到去冗余的转录子序列、转录子和基因组的比对结果和可变剪接信息  #链特异性测序需要加入参数--transcribed_is_aligned)orient  #真菌等小基因组，由于基因比较稠密，需要加入参数--stringent_alignment_overlap
+/opt/biosoft/PASApipeline.v2.4.1/Launch_PASA_pipeline.pl -c alignassembly.config -R -g genome.fasta -t transripts.fasta.clean -T -u transripts.fasta --ALIGNERS gmap,blat --CPU 16 --stringent_alignment_overlap 30.0 --TDN tdn.accs --MAX_INTRON_LENGTH 20000 --TRANSDECODER &> pasa.log
+#不是一定需要网页访问
+#网页中访问PASA结果
+/opt/biosoft/PASApipeline.v2.4.1/run_PasaWeb.pl 9988 &
+firefox localhost:9988/index/html   #然后，输入pasa的数据库名，点击Launch PasaWeb访问结果
+#构建综合转录组数据库
+/opt/biosoft/PASApipeline.v2.4.1/scripts/build_comprehensive_transcriptome.dbi -c alignassembly.config -t transripts.fasta.clean
+#ORF预测和基因预测
+/opt/biosoft/PASApipeline.v2.4.1/scripts/pasa_asmbls_to_training_set.dbi --pasa_transcripts_fasta pasa_${DATE}_${USER}.assemblies.fasta --pasa_transcripts_gff3 pasa_${DATE}_${USER}.pasa_assemblies.gff3
+eference_orfs.pl pasa_$DATE.assemblies.fasta.transdecoder.genome.gff3 300 > best_candidates.gff3  #提取蛋白质长度>=300的基因预测结果
+#提取完好的基因模型   #out.filter1.gff3是去冗余后的基因模型;out.filter2.gff3是完整的基因模型。这些基因模型可以用于其他ab initio基因预测软件的HMM training
+/opt/biosoft/geta/bin/geneModels2AugusutsTrainingInput --cpu 16 --min_evalue 1e-9 --min_identity 0.7 --min_coverage_ratio 0.7 --min_cds_num 1 --min_cds_length 450 --min_cds_exon_ratio 0.4 --keep_ratio_for_excluding_too_long_gene 0.99 pasa.gff3 genome.fasta
+#对基因注释文件（例如EVM的结果）进行更新
+mkdir evm_pasa
+cd evm_pasa
+/opt/biosoft/geta/bin/gff3_clear.pl --prefix evm 
