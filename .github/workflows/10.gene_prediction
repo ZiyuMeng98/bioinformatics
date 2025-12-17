@@ -24,9 +24,9 @@ firefox localhost:9988/index/html   #然后，输入pasa的数据库名，点击
 /opt/biosoft/PASApipeline.v2.4.1/scripts/build_comprehensive_transcriptome.dbi -c alignassembly.config -t transripts.fasta.clean
 #ORF预测和基因预测
 /opt/biosoft/PASApipeline.v2.4.1/scripts/pasa_asmbls_to_training_set.dbi --pasa_transcripts_fasta pasa_${DATE}_${USER}.assemblies.fasta --pasa_transcripts_gff3 pasa_${DATE}_${USER}.pasa_assemblies.gff3
-eference_orfs.pl pasa_$DATE.assemblies.fasta.transdecoder.genome.gff3 300 > best_candidates.gff3  #提取蛋白质长度>=300的基因预测结果
+/opt/biosoft/PASApipeline.v2.4.1/scripts/pasa_asmbls_to_training_set.extract_reference_orfs.pl pasa_${DATE}_${USER}.assemblies.fasta.transdecoder.genome.gff3 300 > best_candidates.gff3   #提取蛋白质长度>=300的基因预测结果
 #提取完好的基因模型   #out.filter1.gff3是去冗余后的基因模型;out.filter2.gff3是完整的基因模型。这些基因模型可以用于其他ab initio基因预测软件的HMM training
-/opt/biosoft/geta/bin/geneModels2AugusutsTrainingInput --cpu 16 --min_evalue 1e-9 --min_identity 0.7 --min_coverage_ratio 0.7 --min_cds_num 1 --min_cds_length 450 --min_cds_exon_ratio 0.4 --keep_ratio_for_excluding_too_long_gene 0.99 pasa.gff3 genome.fasta
+/opt/biosoft/geta/bin/geneModels2AugusutsTrainingInput --cpu 16 --min_evalue 1e-9 --min_identity 0.7 --min_coverage_ratio 0.7 --min_cds_num 1 --min_cds_length 450 --min_cds_exon_ratio 0.4 --keep_ratio_for_excluding_too_long_gene 0.99 best_candidates.gff3 genome.fasta
 #对基因注释文件（例如EVM的结果）进行更新
 mkdir evm_pasa
 cd evm_pasa
