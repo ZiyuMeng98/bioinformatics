@@ -62,3 +62,43 @@ python3 gene_to_tpm.py ../gene.TPM.TMM.matrix > DEG.TPM.TMM.matrix
 Rscript cluster.R DEG.TPM.TMM.matrix ../samples.txt 2
 #自动聚类
 Rscript auto_cluster.R DEG.TPM.TMM.matrix ../samples.txt
+
+
+#StringTie进行转录组分析
+mkdir -p /home/mengziyu/working/09.RNA_seq_analysis/stringtie 
+cd stringtie/
+#组装
+for i in *.bam;do
+  i=${i/.bam/}
+  stringtie $i.bam --rf -l $i -o $i.gtf 4
+  done
+#将多个gtf合并成一个，?.gtf表明只匹配一个字符的.gtf如A.gtf，*不限制匹配字符数
+stringtie --merge -o merged.gtf *.gtf
+#表达量分析
+cp ../cufflinks/genome.gtf ./
+cp ../cufflinks/genome.fasta ./
+for i in *.bam; do i=${i/.bam/}; stringtie $i.bam -G genome.gtf -e --rf -p 4 -b $i -o $i.gtf; done
+echo -e "A1\tA.gtf
+A2\tB.gtf
+A3\tC.gtf
+B1\tD.gtf
+B2\tE.gtf
+B3\tF.gtf
+B4\tG.gtf" > gtf.list
+prepDE.py -i gtf.list -l 200
+python3 stringtie_matrix_counts.py gene_count_matrix.csv gene_count_matrix.tab
+
+
+#HTSeq
+#输入的gtf文件中不能包含可变剪接信息，一般HTSeq结果用于比较不同样品间的基因表达量DESeq分析，而不是样品内部比较
+mkdir -p /home/mengziyu/working/09.RNA_seq_analysis/HTSeq
+cd HTSeq
+ln -s /home/train/09.RNA-seq_analysis_by_cufflinks/HTSeq/genome.gtf ./
+for i in ../../06.reads_aligment/hisat2/*.sam;do
+  i=${i/.sam/}
+  i=${i/*\//}
+  htseq-count -f sam -r name -s reverse -a 10 -t exon -i gene_id /home/stu_wangyanan/working/06.reads_aligment/hisat2/$i.sam genome.gtf > $i.rawCounts.txt
+  done
+python3 htseq_out_matrix.py A1,A2,A3,B1,B2,B3,B4 *.txt > raw_counts.matrix
+python3 rawCounts2tpm.py raw_counts.matrix geome.gtf > tpm_notCross.matrix
+/opt/biosoft/Trinity-v2.11.0/util/support_sripts/run_TMM_scale_matrix.pl --matrix tpm_notCross.matrix > tpm_Cross.matrix
