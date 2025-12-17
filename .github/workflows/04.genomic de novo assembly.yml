@@ -5,7 +5,7 @@ ls /home/train/00.incipient_data/data_for_genome_assembling/illumina.?.fastq > r
 /opt/biosoft/gce-1.0.0/kmerfreq/kmer_freq_hash/kmer_freq_hash -k 21 -l reads.list -t 8 -i 80000000 -o 0 -p out > kmer_freq.log
 /opt/biosoft/gce-1.0.0/gce -f out.freq.stat -c 21 -g 301734211 -m 1 -D 8 -b 1 > out.table 2> out.log
 #若是杂合基因组测序数据，需要添加-H 1参数
-#杂合基因组通常指从一个二倍体或多倍体生物个体中测序得到的基因组数据，这个个体的一条染色体上的某个位置（基因座）可能存在两个不同的版本（等位基因）
+#杂合基因组通常指从一个二倍体或多倍体生物个体中测序得到的基因组数据，这个个体的一条染色体上的某个位置（基因座）可能存在两个不同的版本（等位基因） 
 /opt/biosoft/gce-1.0.0/gce -f out.freq.stat -c 21 -g 301734211 -m 1 -D 8 -b 1 -H 1 > out.table 2> out.log
 #kmer图制作
 echo 'a <- read.table("11",header=TRUE);
