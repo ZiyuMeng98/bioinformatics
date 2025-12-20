@@ -54,4 +54,12 @@ ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Mal
 /opt/biosoft/augustus-3.4.0/scripts/new_species.pl --species=for_bad_genes_removing
 etraining --species=for_bad_genes_removing --stopCodonExcludedFromCDS=false genes.raw.gb 2> train.err
 python3 get_augustus_train_err_id.py train.err badgenes.lst
+/opt/biosoft/augustus-3.4.0/scripts/filterGenes.pl badgenes.lst genes.raw.gb > genes.gb
+#将所有基因模型分成两份，其中一份用于进行HMM模型参数文件的training，另外一份（100个基因模型）用于检测其准确性
+/opt/biosoft/augustus-3.4.0/scripts/randomSplit.pl genes.gb 200
+/opt/biosoft/augustus-3.4.0/scripts/new_species.pl --species=malassezia_sympodialis
+第一次training
+etraining --species=malassezia_sympodialis genes.gb.train > train.out
+#修改AUGUSTUS training结果中的参数文件中三种密码子的频率
+perl -e 'open IN, "train.out"; while (<IN>) { $tag = $1 if m/tag:.*\((.*)\)/; $taa = $1 if m/taa:.*\((.*)\)/; $tga = $1 if m/tga:.*\((.*)\)/; } while (<>) { s#/Constant/amberprob.*#/Constant/amberprob  $tag#; s#/Constant/ochreprob.*#/Constant/ochreprob  $taa#; s#/Constant/opalprob.*#/Constant/opalprob  $tga#; print }' /opt/biosoft/augustus-3.4.0/config/species/malassezia_sympodialis/malassezia_sempodialis_parameters.cfg > 11
 
