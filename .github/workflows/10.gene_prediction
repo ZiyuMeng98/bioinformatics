@@ -31,3 +31,27 @@ firefox localhost:9988/index/html   #然后，输入pasa的数据库名，点击
 mkdir evm_pasa
 cd evm_pasa
 /opt/biosoft/geta/bin/gff3_clear.pl --prefix evm 
+
+
+#使用同源蛋白进行基因预测
+mkdir -p /home/mengziyu/working/10.gene_prediction/homolog
+cd /home/mengziyu/working/10.gene_prediction/homolog\
+ln -s ~/working/05.genome_feature/repeat_analysis/genome.fasta ./
+gzip -dc /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/GCF_000328475.2_Umaydis521_2.0_protein.faa.gz > homolog.fasta
+#使用GeneWise通过同源蛋白对基因组进行基因结构注释
+/opt/biosoft/geta-2.4.12/bin/homolog_genewise --cpu 4 --coverage_ratio 0.4 --evalue 1e-9 --max_gene_length 20000 homolog.fasta genome.fasta
+#将GeneWise结果转换为GFF3格式
+/opt/biosoft/geta-2.4.12/bin/homolog_genewiseGFF2GFF3 --genome genome.fasta --min_score 15 --gene_prefix genewise genewise.gff > genewise.gff3
+
+
+#AUGUSTUS进行基因预测
+mkdir -p /home/mengziyu/working/10.gene_prediction/augustus/training
+cd /home/mengziyu/working/10.gene_prediction/augustus/training
+#将gff3转换为ganbank格式，转换的时候取两侧翼各100bp（该长度取决于物种基因的长度，一般是物种基因长度的1~3倍，若是基因组比较稠密的物种，则需要减少该值）
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+/opt/biosoft/augustus-3.4.0/scripts/gff2gbSmallDNA.pl /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/ati.filter2.gff3 genome.fasta 100 genes.raw.gb
+#去除错误的基因
+/opt/biosoft/augustus-3.4.0/scripts/new_species.pl --species=for_bad_genes_removing
+etraining --species=for_bad_genes_removing --stopCodonExcludedFromCDS=false genes.raw.gb 2> train.err
+python3 get_augustus_train_err_id.py train.err badgenes.lst
+
