@@ -61,5 +61,48 @@ python3 get_augustus_train_err_id.py train.err badgenes.lst
 第一次training
 etraining --species=malassezia_sympodialis genes.gb.train > train.out
 #修改AUGUSTUS training结果中的参数文件中三种密码子的频率
-perl -e 'open IN, "train.out"; while (<IN>) { $tag = $1 if m/tag:.*\((.*)\)/; $taa = $1 if m/taa:.*\((.*)\)/; $tga = $1 if m/tga:.*\((.*)\)/; } while (<>) { s#/Constant/amberprob.*#/Constant/amberprob  $tag#; s#/Constant/ochreprob.*#/Constant/ochreprob  $taa#; s#/Constant/opalprob.*#/Constant/opalprob  $tga#; print }' /opt/biosoft/augustus-3.4.0/config/species/malassezia_sympodialis/malassezia_sempodialis_parameters.cfg > 11
-
+python3 first_augustus_training_change.py --species malassezia_sympodialis --train-out /home/stu_wangyanan/working/10.gene_prediction/augustus/training/train.out --output 11 --augustus-dir /opt/biosoft/augustus-3.4.0/
+augustus --species=malassezia_sympodialis genes.gb.test | tee firsttest.out
+#使用optimize_augustus.pl进行循环training找最优参数
+#其中genes.gb.train包含1498个基因模型，对其再次进行分割，取其中400个基因模型用于对于HMM模型参数优化时的准确性检测，剩下1098个加入到training的过程中，
+#本次优化国策会给你如下，对某一个参数进行优化的时候，将400个基因随机分成8份，每份的基因模型数目为50个，取其中7份基因模型和135个基因模型用于training，再使用剩下的1份基因模型用于准确性检测；
+#总共有8份数据，这8份数据并行化运行，得到8个准确性检测值，取其均值用于参数的优化
+#因此，为了能更准确快速的进行HMM参数文件优化，则需要注意两点：（1）根据计算资源确定并行数，当然，并行数越大，则准确性检测的值更准确；
+#（2）用于准确性监测的基因模型数目。该数目除以并行数的值不要大于100，否则，每次准确性检测耗时会更长。当然，用语准确性检测的基因模型数目除以并行数的值越大，则准确性检测的值更准确。这个需要在准确性和耗时中权衡该值，推荐50-100
+#若用于training的基因模型很多，比如有4500个，同时计算资源达80线程，则可以设置，先将4500个基因模型分成200和4300个，其中200个用于参数文件的准确性检测；然后再将4300个分成300个和4000个，在优化参数过程中，设置并行化数80，这4000个
+#基因模型用于training和准确性检测（并行化的每个线程中随机从4000个基因中抽取50个用于准确性检测），而这300个仅用于training，设置
+/opt/biosoft/augustus-3.4.0/scripts/randomSplit.pl genes.gb.train 134
+ln -s genes.gb.train training.gb.onlytrain
+/opt/biosoft/augustus-3.4.0/scripts/optimize_augustus.pl --species=malassezia_sympodialis --rounds=5 --cpus=8 --kfold=8 --onlytrain=training.gb.onlytrain genes.gb.train.test > optimize.out
+# accuracy value = (3*nucleotide_sensitivity + 2*nucleotide_specificity + 4*exon_sensitivity + 3*exon_specificity + 2*gene_sensitivity + 1*gene_specificity)/15
+# Commonly observed values at this position range from 40 to 60 percent. If you obtain a very low value, this gives a strong indication that the obtained parameter set is not very useful for predicting genes accurately.
+#在firsttest.out和secondtest.out结果中找到上述公式计算值
+#第二次training及准确性检测
+etraining --species=malassezia_sympodialis genes.gb.train
+###
+#CRF(conditional random field)training
+cd /opt/biosoft/augustus-3.4.0/config/species/malassezia_sympodialis/
+cp malassezia_sympodialis_exon_probs.pbl malassezia_sympodialis_exon_probs.pbl.withoutCRF
+cp malassezia_sympodialis_igenic_probs.pbl malassezia_sympodialis_igenic_probs.pbl.withoutCRF
+cp malassezia_sympodialis_intron_probs.pbl malassezia_sympodialis_intron_probs.pbl.withoutCRF
+cd -
+etraining --species=malassezia_sympodialis --CRF=1 genes.gb.train
+#一般来说CRF training的精确性要更高一些，若CRF training准确性更高，则将备份的参数文件还原即可
+cp malassezia_sympodialis_exon_probs.pbl malassezia_sympodialis_exon_probs.pbl.withCRF
+cp malassezia_sympodialis_igenic_probs.pbl malassezia_sympodialis_igenic_probs.pbl.withCRF
+cp malassezia_sympodialis_intron_probs.pbl malassezia_sympodialis_intron_probs.pbl.withCRF
+cd -
+###
+#使用RNA-Seq数据制作hints文件
+mkdir -p /home/mengziyu/working/10.gene_prediction/augustus/making_hints
+cd ../making_hints/
+samtools merge -@ 4 rnaseq.bam ~/working/06.reads_aligment/hisat2/*.sam
+samtools sort -@ 4 -O bam -o rnaseq.sort.bam rnaseq.bam
+/opt/biosoft/augustus-3.4.0/bin/bam2hints --intronsonly --in=rnaseq.sort.bam --out=hints.gff
+#运行AUGUSTUS进行基因预测
+cd ../
+ln -s /home/train/10.gene_prediction/augustus/genome.fasta ./
+/opt/biosoft/augustus-3.4.0/bin/augustus --species=malassezia_sympodialis --hintsfile=making_hints/hints.gff --extrinsicCfgFile=/opt/biosoft/augustus-3.4.0/config/extrinsic/extrinsic.M.RM.E.W.cfg --alternatives-from-evidence=true --allow_hinted_splicesites=atac --gff3=on genome.fasta > augustus.gff3
+#对gff3结果进行整理，修改基因id并转换出标准的gff3格式
+/opt/biosoft/geta-2.4.12/bin/gff3_clear.pl --prefix aug augustus.gff3 > aa;
+python3 augustus_gff3_clean.py aa augustus.gff3
