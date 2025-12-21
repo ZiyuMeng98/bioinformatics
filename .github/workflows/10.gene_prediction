@@ -27,11 +27,13 @@ firefox localhost:9988/index/html   #然后，输入pasa的数据库名，点击
 /opt/biosoft/PASApipeline.v2.4.1/scripts/pasa_asmbls_to_training_set.extract_reference_orfs.pl pasa_${DATE}_${USER}.assemblies.fasta.transdecoder.genome.gff3 300 > best_candidates.gff3   #提取蛋白质长度>=300的基因预测结果
 #提取完好的基因模型   #out.filter1.gff3是去冗余后的基因模型;out.filter2.gff3是完整的基因模型。这些基因模型可以用于其他ab initio基因预测软件的HMM training
 /opt/biosoft/geta/bin/geneModels2AugusutsTrainingInput --cpu 16 --min_evalue 1e-9 --min_identity 0.7 --min_coverage_ratio 0.7 --min_cds_num 1 --min_cds_length 450 --min_cds_exon_ratio 0.4 --keep_ratio_for_excluding_too_long_gene 0.99 best_candidates.gff3 genome.fasta
+"""
 #对基因注释文件（例如EVM的结果）进行更新
 mkdir evm_pasa
 cd evm_pasa
 /opt/biosoft/geta/bin/gff3_clear.pl --prefix evm 
 
+"""
 
 #使用同源蛋白进行基因预测
 mkdir -p /home/mengziyu/working/10.gene_prediction/homolog
@@ -106,3 +108,33 @@ ln -s /home/train/10.gene_prediction/augustus/genome.fasta ./
 #对gff3结果进行整理，修改基因id并转换出标准的gff3格式
 /opt/biosoft/geta-2.4.12/bin/gff3_clear.pl --prefix aug augustus.gff3 > aa;
 python3 augustus_gff3_clean.py aa augustus.gff3
+
+
+#GeneMark进行基因预测  GeneMark-S用于原核生物基因预测，GeneMark-ES/ET用于真核生物基因预测（适用于小型真核生物，特别是真菌）
+"""
+#注意安装协议到~/software  https://genemark.bme.gatech.edu/GeneMark/tmp/
+#gzip -dc gm_key.gz > ~/.gm_key
+mkdir -p /home/mengziyu/working/10.gene_prediction/genemark_es_et/es
+cd /home/mengziyu/working/10.gene_prediction/genemark_es_et/es
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+/opt/biosoft/gmes_linux_64/gmes_petap.pl --sequence genome.fasta --ES --fungus --cores 8
+/opt/biosoft/PASApipeline.v2.4.1/misc_utilities/gtf_to_gff3_format.pl genemark.gtf genome.fasta > genemark.gff3
+/opt/biosoft/geta/bin/gff3_clear.pl --prefix gmes genemark.gff3 >aa; mv aa ../genemarkES.gff3
+#使用GeneMark-ET进行基因预测
+mkdir -p /home/mengziyu/working/10.gene_prediction/genemark_es_et/et
+cd /home/mengziyu/working/10.gene_prediction/genemark_es_et/et
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+python3 hints2genemarkETintron.py genome.fasta ../../augustus/making_hints/hints.gff > genemartET.intron.gff
+/opt/biosoft/gmes_linux_64/gmes_petap.pl --sequence genome.fasta --ET genemartET.intron.gff --fungus --et_score 10 --cores 8
+/opt/biosoft/PASApipeline.v2.4.1/misc_utilities/gtf_to_gff3_format.pl genemark.gtf genome.fasta > genemark.gff3
+/opt/biosoft/geta/bin/gff3_clear.pl --prefix gmet genemark.gff3 > aa; mv aa ../genemarkET.gff3
+
+
+#SNAP
+mkdir -p /home/mengziyu/working/10.gene_prediction/snap
+cd /home/mengziyu/working/10.gene_prediction/snap
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+export PERL5LIB=$PERL5LIB:/opt/biosoft/EVM_r2012-06-25/PerlLib/
+/opt/biosoft/EVM_r2012-06-25/OtherGeneFinderTrainingGuide/SNAP/gff3_to_SNAP_train.pl /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/ati.filter2.gff3 genome.fasta
+/opt/biosoft/snap/fathom genome.ann genome.dna -gene-stats &> gene-stats.log
+/opt/biosoft/snap/fathom genome.ann genome.dna -validate &> validate.log
