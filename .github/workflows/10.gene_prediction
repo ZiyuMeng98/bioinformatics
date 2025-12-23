@@ -28,7 +28,7 @@ firefox localhost:9988/index/html   #然后，输入pasa的数据库名，点击
 #提取完好的基因模型   #out.filter1.gff3是去冗余后的基因模型;out.filter2.gff3是完整的基因模型。这些基因模型可以用于其他ab initio基因预测软件的HMM training
 /opt/biosoft/geta/bin/geneModels2AugusutsTrainingInput --cpu 16 --min_evalue 1e-9 --min_identity 0.7 --min_coverage_ratio 0.7 --min_cds_num 1 --min_cds_length 450 --min_cds_exon_ratio 0.4 --keep_ratio_for_excluding_too_long_gene 0.99 best_candidates.gff3 genome.fasta
 """
-#对基因注释文件（例如EVM的结果）进行更新
+#对基因注释文件（例如EVM的结果）进行更新，在其他完成之后，EVM进行整合再进行这些步骤
 mkdir evm_pasa
 cd evm_pasa
 /opt/biosoft/geta/bin/gff3_clear.pl --prefix evm 
@@ -138,3 +138,111 @@ export PERL5LIB=$PERL5LIB:/opt/biosoft/EVM_r2012-06-25/PerlLib/
 /opt/biosoft/EVM_r2012-06-25/OtherGeneFinderTrainingGuide/SNAP/gff3_to_SNAP_train.pl /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/ati.filter2.gff3 genome.fasta
 /opt/biosoft/snap/fathom genome.ann genome.dna -gene-stats &> gene-stats.log
 /opt/biosoft/snap/fathom genome.ann genome.dna -validate &> validate.log
+grep "OK$" validate.log | sed -n 's/.*:[[:space:]]\{1,\}\([^[:space:]]\{1,\}\)[[:space:]]\{1,\}OK$/\1/p' > zff2keep.txt
+awk 'NR==FNR {keep[$1]=1; next} /^>/ {print; next} $NF in keep' zff2keep.txt genome.ann > out
+mv out genome.ann
+/opt/biosoft/snap/fathom genome.ann genome.dna -categorize 200
+rm alt.* err.* olp.* wrn.*
+/opt/biosoft/snap/fathom genome.ann genome.dna -export 200 -plus
+mkdir params; cd params
+/opt/biosoft/snap/forge ../export.ann ../export.dna
+cd ../
+/opt/biosoft/snap/hmm-assembler.pl species params > species.hmm
+/opt/biosoft/snap/snap species.hmm genome.fasta > snap_out.zff
+/opt/biosoft/EVM_r2012-06-25/OtherGeneFinderTrainingGuide/SNAP/SNAP_output_to_gff3.pl snap_out.zff genome.fasta > snap_out.gff3
+/opt/biosoft/geta/bin/gff3_clear.pl --prefix snap snap_out.gff3 > aa; mv aa snap.gff3
+
+
+#MAKER
+#输入文件包括基因组序列文件，转录本序列文件（推荐trinity genome-guided组装结果），近缘物种蛋白质序列，本物种的重复序列数据库（可以使用repeatmodeler制作），适合本物种的hmm文件（AUGUSTUS、SNAP、Genemark_ES/ET）
+mkdir -p /home/mengziyu/working/10.gene_prediction/maker
+cd /home/mengziyu/working/10.gene_prediction/maker
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+ln -s ~/working/08.RNA-seq_analysis_by_trinity/trinity/trinity_denovo/Trinity.fasta ./
+gzip -dc /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/GCF_000328475.2_Umaydis521_2.0_protein.faa.gz > homolog.fasta
+sed -i.backup '/^>/ { s/\s\+.*//; s/\./_/g; }' homolog.fasta
+ln -s /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/RepeatModeler_database.fa ./consensi.fa
+ln -s ../genemark_es_et/et/output/gmhmm.mod ./
+ln -s ../snap/species.hmm ./
+#准备配置文件
+PATH=/opt/biosoft/tRNAscan-SE-1.3.1/bin/:$PATH
+export PERL5LIB=$PERL5LIB:/opt/biosoft/tRNAscan-SE-1.3.1/bin/
+maker -CTL
+sed -i \
+  -e 's/^genome=.*/genome=genome.fasta/' \
+  -e 's/^est=.*/est=Trinity.fasta/' \
+  -e 's/^protein=.*/protein=homolog.fasta/' \
+  -e 's/^model_org=.*/model_org=fungi/' \
+  -e 's/^rmlib=.*/rmlib=consensi.fa/' \
+  -e 's/^snaphmm=.*/snaphmm=species.hmm/' \
+  -e 's/^augustus_species=.*/augustus_species=malassezia_sympodialis/' \
+  -e 's/^gmhmm=.*/gmhmm=gmhmm.mod/' \
+  -e 's/^est2genome=.*/est2genome=1/' \
+  -e 's/^protein2genome=.*/protein2genome=1/' \
+  -e 's/^trna=.*/trna=1/' \
+  -e 's/^correct_est_fusion=.*/correct_est_fusion=1/' \
+  -e 's/^keep_preds=.*/keep_preds=1/' \
+  maker_opts.ctl
+#并行运行maker
+#需要安装RepBase https://www.cnblogs.com/miyuanbiotech/p/14624488.html  fix.sh运行即可，选中2 enter 5
+/usr/lib64/mpich/bin/mpiexec -n 8 maker -fix_nucleotides &> maker.log
+cd genome.maker.output
+/opt/biosoft/maker/bin/gff3_merge -d genome_master_datastore_index.log
+grep -P '\tamker\t' genome.all.gff > genome.maker.gff3
+/opt/biosoft/geta/bin/gff3_clear.pl --prefix maker genome.maker.gff3 > ../maker.gff3
+
+
+#braker
+mkdir -p ~/working/10.gene_prediction/braker
+cd braker/
+ln -s /home/train/05.genome_feature_analysis/repeat_analysis/genome.softmask.fasta genome.fasta
+gzip -dc /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/GCF_000328475.2_Umaydis521_2.0_protein.faa.gz > homolog.fasta
+sed -i '/^>/ { s/\s\+.*//; s/\./_/g; }' homolog.fasta
+ln -s ../augustus/making_hints/rnaseq.sort.bam ./
+export AUGUSTUS_CONFIG_PATH=/opt/biosoft/augustus-3.4.0/config/
+export AUGUSTUS_BIN_PATH=/opt/biosoft/augustus-3.4.0/bin/
+export AUGUSTUS_SCRIPTS_PATH=/opt/biosoft/augustus-3.4.0/scripts/
+export BAMTOOLS_PATH=/home/stu_wangyanan/.conda/envs/braker/bin/
+export SAMTOOLS_PATH=/opt/biosoft/samtools-1.10/bin/
+export ALIGNMENT_TOOL_PATH=/opt/biosoft/gth-1.7.3-Linux_x86_64-64bit/bin/
+export BLAST_PATH=/opt/biosoft/ncbi-blast-2.12.0+/bin/
+export GENEMARK_PATH=/opt/biosoft/gmes_linux_64/
+export DIAMOND_PATH=/opt/biosoft/diamond/
+export PYTHON3_PATH=/opt/sysoft/Python-3.8.4/bin/
+export CDBTOOLS_PATH=/opt/biosoft/PASApipeline.v2.4.1/bin/
+/opt/biosoft/BRAKER-2.1.5/scripts/braker.pl --species=malassezia_sympodialis_braker --genome=genome.fasta --etpmode --bam=rnaseq.sort.bam --prot_seq=homolog.fasta --cores 8 -softmasking
+python3 braker.py braker/braker.gtf > braker.gtf
+/opt/biosoft/geta/bin/gff3_clear.pl --prefix braker braker.gff3 > aa; mv aa braker.gff3
+
+
+#GETA
+mkdir -p ~/working/10.gene_prediction/geta
+cd working/10.gene_prediction/geta/
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+gzip -dc /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/GCF_000328475.2_Umaydis521_2.0_protein.faa.gz > homolog.fasta
+sed -i '/^>/ { s/\s\+.*//; s/\./_/g; }' homolog.fasta
+ln -s /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/RepeatModeler_database.consensi.fa consensi.fa
+cat /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/*.1.fastq > reads.1.fastq
+cat /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/*.2.fastq > reads.2.fastq
+/opt/biosoft/geta/bin/geta.pl --genome genome.fasta -1 reads.1.fastq -2 reads.2.fastq --protein homolog.fasta --augustus_species Malassezia_sympodialis_geta --RM_species fungi --RM_lib consensi.fa --pfam_db /opt/biosoft/hmmer-3.2.1/Pfam-AB.hmm --gene_prefix MS01Gene --cpu 8 &> geta.log
+
+
+
+#使用EVM整合基因预测结果
+mkdir -p ~/working/10.gene_prediction/evm
+cd working/10.gene_prediction/evm/
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+sed '/^#/d; /^[[:space:]]*$/d' ../augustus/augustus.gff3 > gene_predictions.gff3
+cp ../pasa/pasa*.pasa_assemblies.gff3 transcript_alignment.gff3
+sed -i 's/^\S\+\t/pasa_transcript_alignments\t/' transcript_alignment.gff3
+sed '/Low_complexity/d; /Simple_repeat/d; /^#/d; /^[[:space:]]*$/d'~/working/05.genome_feature/repeat_analysis/genome.repeat.gff3 > genome.repeat.gff3
+ echo -e "ABINITIO_PREDICTION\tAUGUSTUS\t1
+ABINITIO_PREDICTION\tmaker\t1
+ABINITIO_PREDICTION\tGeneMark.hmm\t1
+TRANSCRIPT\tpasa_transcript_alignments\t10" > weights.txt
+#将输入数据分割成小份数据
+/opt/biosoft/EVidenceModeler-1.1.1/EvmUtils/partition_EVM_inputs.pl --genome genome.fasta --gene_predictions gene_predictions.gff3 --transcript_alignments transcript_alignment.gff3 --repeats genome.repeat.gff3 --segmentSize 500000 --overlapSize 10000 --partition_listing partitions_list.out
+#将小份数据进行EVM并行计算，注意weight.txt需要完成链接
+/opt/biosoft/EVidenceModeler-1.1.1/EvmUtils/write_EVM_commands.pl --genome genome.fasta --gene_predictions gene_predictions.gff3 --transcript_alignments transcript_alignment.gff3 --repeats genome.repeat.gff3 --weights /home/stu_wangyanan/working/10.gene_prediction/evm/weights.txt --partitions partitions_list.out --output_file_name evm.out > commands.write_EVM_commands.list
+ParaFly -c commands.write_EVM_commands.list -CPU 4
+
