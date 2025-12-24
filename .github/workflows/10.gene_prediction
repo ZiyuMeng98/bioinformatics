@@ -3,10 +3,10 @@ mkdir -p /home/mengziyu/working/10.gene_prediction/pasa
 cd /home/mengziyu/working/10.gene_prediction/pasa
 ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
 #将RNA-Seq de novo组装序列和genome-guided组装序列合并到一个文件中
-cat /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Trinity*fasta > transripts.fasta
+cat /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Trinity*fasta > transcripts.fasta
 python3 pasa_get_seq_name.py /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Trinity.fasta > tdn.accs
 #对转录本序列进行尾部截短（end-trimming，包括vector,adaptor,primer,polyA/T尾巴）
-/opt/biosoft/PASApipeline.v2.4.1/bin/seqclean transripts.fasta -v /opt/biosoft/PASApipeline.v2.4.1/UniVec/UniVec
+/opt/biosoft/PASApipeline.v2.4.1/bin/seqclean transcripts.fasta -v /opt/biosoft/PASApipeline.v2.4.1/UniVec/UniVec
 #生成比对配置文件
 cp /opt/biosoft/PASApipeline.v2.4.1/pasa_conf/pasa.alignAssembly.Template.txt alignassembly.config
 DATE=$(date +%Y%m%d%H%M%S)
@@ -15,13 +15,13 @@ sed -i "s/^DATABASE=.*/DATABASE=pasa_${DATE}_${USER}/" alignassembly.config
 #生成MySQL数据库及表
 /opt/biosoft/PASApipeline.v2.4.1/scripts/create_mysql_cdnaassembly_db.dbi -r -c alignassembly.config -S /opt/biosoft/PASApipeline.v2.4.1/schema/cdna_alignment_mysqlschema
 #运行PASA主程序，将转录本序列比对到基因组上，得到去冗余的转录子序列、转录子和基因组的比对结果和可变剪接信息  #链特异性测序需要加入参数--transcribed_is_aligned)orient  #真菌等小基因组，由于基因比较稠密，需要加入参数--stringent_alignment_overlap
-/opt/biosoft/PASApipeline.v2.4.1/Launch_PASA_pipeline.pl -c alignassembly.config -R -g genome.fasta -t transripts.fasta.clean -T -u transripts.fasta --ALIGNERS gmap,blat --CPU 16 --stringent_alignment_overlap 30.0 --TDN tdn.accs --MAX_INTRON_LENGTH 20000 --TRANSDECODER &> pasa.log
+/opt/biosoft/PASApipeline.v2.4.1/Launch_PASA_pipeline.pl -c alignassembly.config -R -g genome.fasta -t transcripts.fasta.clean -T -u transcripts.fasta --ALIGNERS gmap,blat --CPU 16 --stringent_alignment_overlap 30.0 --TDN tdn.accs --MAX_INTRON_LENGTH 20000 --TRANSDECODER &> pasa.log
 #不是一定需要网页访问
 #网页中访问PASA结果
 /opt/biosoft/PASApipeline.v2.4.1/run_PasaWeb.pl 9988 &
 firefox localhost:9988/index/html   #然后，输入pasa的数据库名，点击Launch PasaWeb访问结果
 #构建综合转录组数据库
-/opt/biosoft/PASApipeline.v2.4.1/scripts/build_comprehensive_transcriptome.dbi -c alignassembly.config -t transripts.fasta.clean
+/opt/biosoft/PASApipeline.v2.4.1/scripts/build_comprehensive_transcriptome.dbi -c alignassembly.config -t transcripts.fasta.clean
 #ORF预测和基因预测
 /opt/biosoft/PASApipeline.v2.4.1/scripts/pasa_asmbls_to_training_set.dbi --pasa_transcripts_fasta pasa_${DATE}_${USER}.assemblies.fasta --pasa_transcripts_gff3 pasa_${DATE}_${USER}.pasa_assemblies.gff3
 /opt/biosoft/PASApipeline.v2.4.1/scripts/pasa_asmbls_to_training_set.extract_reference_orfs.pl pasa_${DATE}_${USER}.assemblies.fasta.transdecoder.genome.gff3 300 > best_candidates.gff3   #提取蛋白质长度>=300的基因预测结果
@@ -29,10 +29,26 @@ firefox localhost:9988/index/html   #然后，输入pasa的数据库名，点击
 /opt/biosoft/geta/bin/geneModels2AugusutsTrainingInput --cpu 16 --min_evalue 1e-9 --min_identity 0.7 --min_coverage_ratio 0.7 --min_cds_num 1 --min_cds_length 450 --min_cds_exon_ratio 0.4 --keep_ratio_for_excluding_too_long_gene 0.99 best_candidates.gff3 genome.fasta
 """
 #对基因注释文件（例如EVM的结果）进行更新，在其他完成之后，EVM进行整合再进行这些步骤
-mkdir evm_pasa
-cd evm_pasa
-/opt/biosoft/geta/bin/gff3_clear.pl --prefix evm 
+mkdir -p ~/working/10.gene_prediction/evm_pasa
+cd ~/working/10.gene_prediction/evm_pasa
+cd ../pasa/  
 
+"""
+"""
+#使用PASA更新基因预测结果并导出基因序列
+mkdir -p ~/working/10.gene_prediction/evm_pasa
+cd ~/working/10.gene_prediction/evm_pasa
+cd ../pasa/  
+cp /opt/biosoft/PASApipeline.v2.4.1/pasa_conf/pasa.annotationCompare.Template.txt annotationCompare.config
+PasaMysqlDB=$(grep -oP 'DATABASE=\K\S+' alignassembly.config | head -1)
+sed -i "s/^DATABASE=.*/DATABASE=$PasaMysqlDB/" annotationCompare.config
+/opt/biosoft/PASApipeline.v2.4.1/Launch_PASA_pipeline.pl -c annotationCompare.config -A -g genome.fasta -t transcripts.fasta.clean -T -u transcripts.fasta -L --annots ../evm/evm.gff3
+first_update_gff3=`ls *gene_structures_post_PASA_updates*.gff3 -t | head -n 1`
+/opt/biosoft/PASApipeline.v2.4.1/Launch_PASA_pipeline.pl -c annotationCompare.config -A -g genome.fasta -t transcripts.fasta.clean -T -u transcripts.fasta -L --annots $first_update_gff3
+second_update_gff3=`ls *gene_structures_post_PASA_updates*.gff3 -t | head -n 1`
+/opt/biosoft/PASApipeline.v2.4.1/Launch_PASA_pipeline.pl -c annotationCompare.config -A -g genome.fasta -t transcripts.fasta.clean -T -u transcripts.fasta -L --annots $second_update_gff3
+third_update_gff3=`ls *gene_structures_post_PASA_updates*.gff3 -t | head -n 1`
+/opt/biosoft/geta/bin/GFF3Clear --genome genome.fasta --no_attr_add --GFF3_source EVM_PASA --gene_prefix evmPasa $third_update_gff3 > ../evm_pasa/evmPasa.gff3
 """
 
 #使用同源蛋白进行基因预测
@@ -235,8 +251,9 @@ ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Mal
 sed '/^#/d; /^[[:space:]]*$/d' ../augustus/augustus.gff3 > gene_predictions.gff3
 cp ../pasa/pasa*.pasa_assemblies.gff3 transcript_alignment.gff3
 sed -i 's/^\S\+\t/pasa_transcript_alignments\t/' transcript_alignment.gff3
+awk -F'\t' '$3=="cds"{$3="protein_match";if($5<$4){t=$4;$4=$5;$5=t}print}' OFS='\t' ../homolog/genewise.gff | sort -t$'\t' -k1,1 -k4,4n > protein_alignments.gff3
 sed '/Low_complexity/d; /Simple_repeat/d; /^#/d; /^[[:space:]]*$/d'~/working/05.genome_feature/repeat_analysis/genome.repeat.gff3 > genome.repeat.gff3
- echo -e "ABINITIO_PREDICTION\tAUGUSTUS\t1
+echo -e "ABINITIO_PREDICTION\tAUGUSTUS\t1
 ABINITIO_PREDICTION\tmaker\t1
 ABINITIO_PREDICTION\tGeneMark.hmm\t1
 TRANSCRIPT\tpasa_transcript_alignments\t10" > weights.txt
@@ -245,4 +262,46 @@ TRANSCRIPT\tpasa_transcript_alignments\t10" > weights.txt
 #将小份数据进行EVM并行计算，注意weight.txt需要完成链接
 /opt/biosoft/EVidenceModeler-1.1.1/EvmUtils/write_EVM_commands.pl --genome genome.fasta --gene_predictions gene_predictions.gff3 --transcript_alignments transcript_alignment.gff3 --repeats genome.repeat.gff3 --weights /home/stu_wangyanan/working/10.gene_prediction/evm/weights.txt --partitions partitions_list.out --output_file_name evm.out > commands.write_EVM_commands.list
 ParaFly -c commands.write_EVM_commands.list -CPU 4
+#合并并行运算的结果并转换成GFF3格式
+/opt/biosoft/EVidenceModeler-1.1.1/EvmUtils/recombine_EVM_partial_outputs.pl --partitions partitions_list.out --output_file_name evm.out
+/opt/biosoft/EVidenceModeler-1.1.1/EvmUtils/convert_EVM_outputs_to_GFF3.pl --partitions partitions_list.out --output_file_name evm.out --genome genome.fasta
+cat */evm.out.gff3 > evm_out.gff3
+/opt/biosoft/geta/bin/GFF3Clear --genome genome.fasta --no_attr_add --GFF3_source EVM --gene_prefix evm evm_out.gff3 > evm.gff3
+python3 evm_genes_filtering.py evm.gff3 evidence.gff3 0.3 genome.fasta 1e-6 0.3 160 > evm.filter.gff3
+/opt/biosoft/geta/bin/GFF3Clear --genome genome.fasta --no_attr_add --GFF3_source EVM --gene_prefix evm evm.filter.gff3 > evm.gff3
 
+#BUSCO检测基因组完整性
+mkdir -p ~/working/10.gene_prediction/BUSCO
+cd ~/working/10.gene_prediction/BUSCO
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+mkdir gff3_files
+python3 bestgenemodels.py ../augustus/augustus.gff3 > gff3_files/augustus.gff3
+python3 bestgenemodels.py ../genemark_es_et/genemarkES.gff3 > gff3_files/genemarkES.gff3
+python3 bestgenemodels.py ../genemark_es_et/genemarkET.gff3 > gff3_files/genemarkEt.gff3
+python3 bestgenemodels.py  ../snap/snap.gff3 > gff3_files/snap.gff3
+python3 bestgenemodels.py ../maker/maker.gff3 > gff3_files/maker.gff3
+python3 bestgenemodels.py ../braker/braker.gff3 > gff3_files/braker.gff3
+python3 bestgenemodels.py ../evm/evm.gff3 > gff3_files/evm.gff3
+python3 bestgenemodels.py ../evm_pasa/evmPasa.gff3 > gff3_files/evmPasa.gff3
+# 提取蛋白序列
+for i in gff3_files/*.gff3;do
+> x=${i/*\//}
+> x=${x/.gff3/}
+> /opt/biosoft/geta/bin/gff3_to_protein.pl genome.fasta $i > protein_files/proteins.$x.fasta
+> done
+# 获取NCBI注释的蛋白序列
+wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/349/305/GCF_000349305.1_ASM34930v2/GCF_000349305.1_ASM34930v2_protein.faa.gz -P /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/
+gzip -dc /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/GCF_000349305.1_ASM34930v2_protein.faa.gz > protein_files/proteins.ncbi.fasta
+# BUSCO分析
+sh busco.sh
+#统计BUSCO结果并绘制柱形图
+grep C: */*/short_summary*.txt | perl -pe 's/.*odb10.(.+?).txt/$1/; $str = " " x (10 - length($1)); s/^/$str/;' > busco.summary.txt
+cd busco_out/
+ln -s */short_summary* .
+/opt/biosoft/busco-4.1.2/scripts/generate_plot.py -wd ./ -rt specific
+cat busco_figure.R | R --vanilla --slave
+
+
+#SpliceGrapher进行可变剪接分析
+mkdir -p ~/working/10.gene_prediction/splicegrapher
+cd ~/working/10.gene_prediction/splicegrapher
