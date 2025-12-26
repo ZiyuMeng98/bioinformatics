@@ -355,4 +355,11 @@ samtools index ../5.calculate_counts/filtered.bam
 python3 splicegrapher_create_graphs.py ../genome.gff3 ../5.calculate_counts/splicegraph.filtered.gtf ../5.calculate_counts/filtered.bam ./ 8
 
 
-#
+#原核生物基因预测
+mkdir -p ~/working/10.gene_prediction/genemark_s
+cd ~/working/10.gene_prediction/genemark_s
+#使用基因组fasta文件
+gzip -dc /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/GCF_000005845.2_ASM584v2_genomic.fna.gz > genome.ecoli.fasta
+sed -i 's/^\(>[^[:space:]]*\).*/\1/' genome.ecoli.fasta
+/opt/biosoft/gms2_linux_64/gms2.pl --seq genome.ecoli.fasta --genome-type bacteria --gcode 11 --format gff --output gms2.gff --fnn genes.fasta --faa proteins.fasta
+python3 genemarks_gff2gff3.py gms2.gff Ecoli > gms2.gff3
