@@ -305,3 +305,54 @@ cat busco_figure.R | R --vanilla --slave
 #SpliceGrapher进行可变剪接分析
 mkdir -p ~/working/10.gene_prediction/splicegrapher
 cd ~/working/10.gene_prediction/splicegrapher
+ln -s /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta genome.fasta
+sed '/^\s*$/d' /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Malassezia_sympodialis_V01.BestGeneModels.gff3 > genome.gff3
+sed '/^\s*$/d' /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Malassezia_sympodialis_V01.BestGeneModels.gtf > genome.gtf
+cd ~/working/06.reads_aligment/hisat2/
+hisat2 -x genome -p 16 --min-intronlen 20 --max-intronlen 4000 --rna-strandness RF -1 A.1.fastq -2 A.2.fastq --no-softclip -S /home/mengziyu/working/10.gene_prediction/splicegrapher/hisat2.sam
+cd -
+samtools sort -@ 16 -O sam -o 11.sam hisat2.sam ; mv 11.sam hisat2.sam
+ln -s /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/A.*.fastq ./
+export SG_FASTA_REF=$PWD/genome.fasta
+export SG_GENE_MODEL=$PWD/genome.gff3
+/opt/sysoft/Python-2.7.18/bin/build_classifiers.py -d gt,gc -a ag -l create_classifiers.log
+#使用上一步的模型文件对RNA-Seq比对结果进行过滤
+mkdir ../2.filter_alignments
+cd ../2.filter_alignments
+ln -s ../1.create_classifiers/classifiers.zip ./
+/opt/sysoft/Python-2.7.18/bin/sam_filter.py ../hisat2.sam classifiers.zip -o filtered.sam -v
+#预测可变剪接graph
+mkdir ../3.predict_graphs
+cd ../3.predict_graphs
+/opt/sysoft/Python-2.7.18/bin/predict_graphs.py ../2.filter_alignments/filtered.sam -v
+#再次比对RNA-Seq结果对graph进行更新
+mkdir ../4.realignment_pipeline
+cd ../4.realignment_pipeline
+/opt/sysoft/Python-2.7.18/bin/realignment_pipeline.py ../3.predict_graphs/ -1 ../A.1.fastq -2 ../A.2.fastq
+#可变剪接预测
+mkdir ../5.calculate_counts
+cd ../5.calculate_counts
+#得到包含可变剪切的gtf文件
+ls $PWD/../4.realignment_pipeline/*/*.gff > predict_graphs.lis
+/opt/sysoft/Python-2.7.18/bin/generate_putative_sequences.py predict_graphs.lis -A -M splicegraph.gtf
+#注意生成的splicegraph.gtf文件中第一列，其序列ID的首字母可能会由原来的小写变为大写字母，其它字母会由大写变成小写，若发生该情况，则修改还原
+sed -i 's/Ms01contig/MS01Contig/g' splicegraph.gtf  #将Ms01contig修改为MS01Contig
+python3 add_genemodels_to_spliceGrapher_gtf.py splicegraph.gtf ../genome.gtf > all.gtf
+samtools sort -@ 8 -O BAM -o filtered.bam ../2.filter_alignments/filtered.sam
+#cufflins进行转录本表达量计算
+cuffquant -o cufflinks -b ../genome.fasta -u -p 16 all.gtf filtered.bam &> cuffquant.log
+cuffnorm -o cufflinks -L A,A -p 16 --library-norm-method classic-fpkm all.gtf cufflinks/abundances.cxb cufflinks/abundances.cxb
+#可变剪接统计
+mkdir ../6.alternative_splicing_statistics
+cd ../6.alternative_splicing_statistics
+sed -E 's/(.*)(exon_number.*?;)(.*)( gene_name.*?;)(.*)/\1\3\5;\4 \2/' ../5.calculate_counts/splicegraph.filtered.gtf > splicegraph.filtered.gtf
+para_alternative_splicing_statistics.pl splicegraph.filtered.gtf 8 > alternative_splicing_statistics.txt
+python3 alternative_splicing_count.py alternative_splicing_statistics.txt > alternative_splicing_statistics.stats
+#批量化对每个可变剪接进行绘图
+mkdir ../7.create_graphs
+cd ../7.create_graphs
+samtools index ../5.calculate_counts/filtered.bam
+python3 splicegrapher_create_graphs.py ../genome.gff3 ../5.calculate_counts/splicegraph.filtered.gtf ../5.calculate_counts/filtered.bam ./ 8
+
+
+#
