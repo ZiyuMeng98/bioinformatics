@@ -1,0 +1,49 @@
+#本地blast
+# 本地化基因组数据库构建和wwwblast搭建
+mkdir /opt/biosoft/ncbi-blast-2.12.0+/db/
+cd /opt/biosoft/ncbi-blast-2.12.0+/db/
+#构建核酸数据库
+makeblastdb -in /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta -dbtype nucl -title malassezia_sympodialis_V01.genome -parse_seqids -out malassezia_sympodialis_V01.genome -logfile malassezia_sympodialis_V01.genome.log
+#构建蛋白质数据库
+makeblastdb -in /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Malassezia_sympodialis_V01.protein.fasta -dbtype prot -title malassezia_suympodialis_V01.protein -parse_seqids -out Malassezia_sympodialis_V01.protein -logfile protein.log
+#本地化运行blast
+mkdir -p ~/working/11.functional_annotation/blast_to_genome
+cd ~/working/11.functional_annotation/blast_to_genome
+python3 ncbi_acc_or_gi_to_fasta.py gi.ncbi_gene_phyA.list 10 > phyA.nucl.fasta
+sed -E 's/>([^[:space:]]*).*/>\1/; s/\|/_/g' /home/train/00.incipient_data/data_for_functional_annotation/phyA.nucl.fasta > phyA.nucl.fasta
+blastn -query phyA.nucl.fasta -db malassezia_sympodialis_V01.genome -out blastn.out -evalue 1e-5 -outfmt 7 -num_threads 4
+# 在https://www.uniprot.org/uniprot/搜索"3-phytase a" AND reviewed:yes，并下载数据
+sed 's/>\([^[:space:]]*\).*/>\1/; s/|/_/g' /home/train/00.incipient_data/data_for_functional_annotation/uniprot-_3-phytase+a_-filtered-reviewed_yes.fasta > phyA.pep.fasta
+blastp -query phyA.pep.fasta -db malassezia_sympodialis_V01.protein -out blastp.out -evalue 1e-5 -outfmt 7 -num_threads 4
+
+
+#Nr注释
+mkdir -p ~/working/11.functional_annotation/nr
+cd ~/working/11.functional_annotation/nr
+wget ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
+makeblastdb -in nr -dbtype prot -parse_seqids -out nr
+gunzip nr.gz
+# 创建蛋白质数据库
+makeblastdb -in nr -dbtype prot -parse_seqids -out nr
+diamond blastp --db nr_fungi --query ../proteins.fasta --out Nr.xml --outfmt 5 --sensitive --max-target-seqs 20 --evalue 1e-5 --id 10 --index-chunks 1
+gzip -dc ~/00.incipient_data/data_for_functional_annotation/Nr.xml.gz > Nr.xml
+python3 parsing_blast_result.py --out-hit-confidence --subject-annotation Nr.xml > Nr.tab
+cp Nr.tab ../functional_annotation.Nr.tab
+cp Nr.txt ../functional_annotation.Nr.txt
+cp Nr_species_distribution.txt ../functional_annotation.Nr.species_distribution
+cd ..
+
+
+#Swiss-Prot 注释
+mkdir -p ~/working/11.functional_annotation/swiss-prot
+cd swiss-prot/
+#使用 ncbi-blast+ 进行 Swiss-Prot 注释
+head -n 200 ../proteins.fasta > test.fasta
+blast.pl --CPU 8 --outfmt 5 -clean /opt/biosoft/bioinfomatics_databases/Swiss-Prot/uniprot_sprot test.fasta > blast.xml
+#使用diamond进行分析
+#dmnd 数据库相比 BLAST 的 .phr/.pin/.psq 格式，在比对速度上有显著提升，特别适合大规模蛋白质序列比对任务
+#构建diamond数据库文件diamond makedb --in uniprot_sprot.fasta -d uniprot_sprot
+ln -sf /opt/biosoft/bioinfomatics_databases/Swiss-Prot/uniprot_sprot.dmnd ./ 
+diamond blastp --db uniprot_sprot --query ../proteins.fasta --out uniprot_sprot.xml --outfmt 5 --sensitive --max-target-seqs 20 --evalue 1e-5 --id 10 --index-chunks 1
+python3 parsing_blast_result.py --out-hit-confidence --suject-annotation uniprot_sprot.xml > uniprot_sprot.tab
+python3 gene_annnotation_from_SwissProt.py uniprot_sprot.tab > SwissProt.txt
