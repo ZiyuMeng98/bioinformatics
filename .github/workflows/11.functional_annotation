@@ -31,7 +31,6 @@ python3 parsing_blast_result.py --out-hit-confidence --subject-annotation Nr.xml
 cp Nr.tab ../functional_annotation.Nr.tab
 cp Nr.txt ../functional_annotation.Nr.txt
 cp Nr_species_distribution.txt ../functional_annotation.Nr.species_distribution
-cd ..
 
 
 #Swiss-Prot 注释
@@ -47,3 +46,84 @@ ln -sf /opt/biosoft/bioinfomatics_databases/Swiss-Prot/uniprot_sprot.dmnd ./
 diamond blastp --db uniprot_sprot --query ../proteins.fasta --out uniprot_sprot.xml --outfmt 5 --sensitive --max-target-seqs 20 --evalue 1e-5 --id 10 --index-chunks 1
 python3 parsing_blast_result.py --out-hit-confidence --suject-annotation uniprot_sprot.xml > uniprot_sprot.tab
 python3 gene_annnotation_from_SwissProt.py uniprot_sprot.tab > SwissProt.txt
+
+
+#COG
+mkdir -p ~/working/11.functional_annotation/COG
+cd ~/working/11.functional_annotation/COG
+#构建COG/KOG数据库
+#wget ftp://ftp.ncbi.nih.gov/pub/COG/COG/whog
+#wget ftp://ftp.ncbi.nih.gov/pub/COG/COG/cog2003-2014.csv
+#diamond makedb --in protein.fasta -d database_name
+ln -sf /opt/biosoft/bioinfomatics_databases/COG/kog.dmnd ./
+diamond blastp --db kog --query ../proteins.fasta --out kog.xml --outfmt 5 --sensitive --max-target-seqs 200 --evalue 1e-5 --id 10 --tmpdir /dev/shm --index-chunks 1
+cog_from_xml.pl --coverage 0.2 --evalue 1e-5  --db-fasta /opt/biosoft/bioinfomatics_databases/COG/kog.fasta --db-class ~/bin/cog/kog --fun-txt /opt/biosoft/bioinfomatics_databases/COG/fun.kog.txt kog.xml
+cut -f 1,3,4 out.annot | python3 gene_annotation_from_table.py > kogg.txt
+python3 cog_R.py --title "KOG Function Classification of Whole Genome Genes of Malassezia sympodialis" --y-name "Number of Genes" out.class
+cp out.annot ../functional_annotation.KOG.tab
+cp KOG.txt ../functional_annotation.KOG.txt
+cp out.pdf ../functional_annotation.KOG.pdf
+cp out.png ../functional_annotation.KOG.png
+
+
+#eggNOG 注释
+mkdir -p ~/working/11.functional_annotation/eggNOG
+cd ~/working/11.functional_annotation/eggNOG/
+"""
+# eggNOG官网的网页工具提交进行注释
+# http://eggnog-mapper.embl.de/提交蛋白序列
+# one-to-one orthology only; evalue: 0.001; score 60; query coverage: 20%; subject coverage: 20%
+# http://eggnog-mapper.embl.de/job_status?jobname=MM_1revx_hu
+# wget http://eggnog-mapper.embl.de/MM_1revx_hu/query_seqs.fa.emapper.annotations
+# wget http://eggnog-mapper.embl.de/MM_1revx_hu/query_seqs.fa.emapper.seed_orthologs
+"""
+#本地eggNOG注释
+#创建conda环境，安装eggnog-mapper
+#conda create -n eggnog python=3.7
+#conda activate eggnog
+#conda install -c bioconda -c conda-forge eggnog-mapper
+#文件下载wget -c http://eggnog5.embl.de/download/emapperdb-5.0.2/eggnog.db.gz
+#文件下载wget -c http://eggnog5.embl.de/download/emapperdb-5.0.2/eggnog_proteins.dmnd.gz
+ln -sf /opt/biosoft/eggnog-mapper-2.1.2/data/eggnog_proteins.dmnd ./
+diamond blastp --db eggnog_proteins  --query ../proteins.fasta --out eggNOG.xml --outfmt 5 --sensitive --max-target-seqs 20 --evalue 1e-5 --id 10 --tmpdir /dev/shm --index-chunks 1
+python3 parsing_blast_result.py --no-header --max-hit-num 1 --hsp-num 1 eggNOG.xml | cut -f 1,2,11,12 > eggNOG.emapper.seed_orthologs
+/opt/biosoft/eggnog-mapper-2.1.2/emapper.py --cpu 16 -m no_search --annotate_hits_table eggNOG.emapper.seed_orthologs -o eggNOG--dbmem --override
+cp eggNOG.emapper.annotations ../functional_annotation.eggNOG.tab
+grep -v -P "^#" eggNOG.emapper.annotations | cut -f 1,8 > eggNOG.txt
+cp eggNOG.txt ../functional_annotation.eggNOG.txt
+
+
+#Interpro注释
+mkdir ~/working/11.functional_annotation/interpro
+cd ~/working/11.functional_annotation/interpro/
+# 联网提交序列到EBI官网进行InterPro注释
+#python3 interproscan.pl ../proteins.fasta ZiyuMeng98@gmail.com interpro5 30
+#本地interpro注释
+#wget https://ftp.ebi.ac.uk/pub/software/unix/iprscan/5/5.73-104.0/interproscan-5.73-104.0-64-bit.tar.gz
+#由于文件较大，需要MD5校验完整性md5sum -c interproscan-5.73-104.0-64-bit.tar.gz.md5
+#tar -pxvzf
+#次运行前，需要执行初始化命令以下载并建立模型索引：python3 setup.py -f interproscan.properties
+# 本地InterPro注释，可以获得TSV、XML、GFF3、SVG和HTML结果。新版的InterPro开始不支持SVG和HTML结果，网页提交完全不支持SVG和HTML结果。
+#/opt/biosoft/interproscan/interproscan.sh --output-file-base out --cpu 8 --formats TSV,XML,GFF3 --goterms --input uncompleted2.fasta
+cp ~/00.incipient_data/data_for_functional_annotation/interpro* ./
+grep IPR interpro.tsv | cut -f 1,12,13 | python3 gene_annotation_from_table.py > InterPro.txt
+cp interpro.tsv ../functional_annotation.InterPro.tab
+cp InterPro.txt ../functional_annotation.InterPro.txt
+cp interpro.gff3 ../functional_annotation.InterPro.gff3
+cp interpro.html.tar.gz ../functional_annotation.InterPro.html.tar.gz
+cp interpro.svg.tar.gz ../functional_annotation.InterPro.svg.tar.gz
+
+
+#pfam注释
+mkdir -p ~/working/11.functional_annotation/pfam
+cd ~/working/11.functional_annotation/pfam/
+"""
+#cd /opt/biosoft/hmmer-3.3.1/
+#wget http://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz
+#gunzip Pfam-A.hmm.gz
+#hmmpress Pfam-A.hmm   生成索引
+"""
+python3 para_hmmscan.py --outformat --cpu 4 --hmm-db /opt/biosoft/hmmer-3.3.1/Pfam-A.hmm ../proteins.fasta > Pfam.tab
+cut -f 1,2,7 Pfam.tab | tail -n +2 | python3 gene_annotation_from_table.py > Pfam.txt
+cp Pfam.tab ../functional_annotation.Pfam.tab
+cp Pfam.txt ../functional_annotation.Pfam.txt
