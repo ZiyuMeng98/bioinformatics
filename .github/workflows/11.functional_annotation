@@ -1,29 +1,29 @@
-#本地blast
-# 本地化基因组数据库构建和wwwblast搭建
+# 本地blast
+#  本地化基因组数据库构建和wwwblast搭建
 mkdir /opt/biosoft/ncbi-blast-2.12.0+/db/
 cd /opt/biosoft/ncbi-blast-2.12.0+/db/
-#构建核酸数据库
+# 构建核酸数据库
 makeblastdb -in /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta -dbtype nucl -title malassezia_sympodialis_V01.genome -parse_seqids -out malassezia_sympodialis_V01.genome -logfile malassezia_sympodialis_V01.genome.log
-#构建蛋白质数据库
+# 构建蛋白质数据库
 makeblastdb -in /home/train/00.incipient_data/data_for_gene_prediction_and_RNA-seq/Malassezia_sympodialis_V01.protein.fasta -dbtype prot -title malassezia_suympodialis_V01.protein -parse_seqids -out Malassezia_sympodialis_V01.protein -logfile protein.log
-#本地化运行blast
+# 本地化运行blast
 mkdir -p ~/working/11.functional_annotation/blast_to_genome
 cd ~/working/11.functional_annotation/blast_to_genome
 python3 ncbi_acc_or_gi_to_fasta.py gi.ncbi_gene_phyA.list 10 > phyA.nucl.fasta
 sed -E 's/>([^[:space:]]*).*/>\1/; s/\|/_/g' /home/train/00.incipient_data/data_for_functional_annotation/phyA.nucl.fasta > phyA.nucl.fasta
 blastn -query phyA.nucl.fasta -db malassezia_sympodialis_V01.genome -out blastn.out -evalue 1e-5 -outfmt 7 -num_threads 4
-# 在https://www.uniprot.org/uniprot/搜索"3-phytase a" AND reviewed:yes，并下载数据
+#  在https://www.uniprot.org/uniprot/搜索"3-phytase a" AND reviewed:yes，并下载数据
 sed 's/>\([^[:space:]]*\).*/>\1/; s/|/_/g' /home/train/00.incipient_data/data_for_functional_annotation/uniprot-_3-phytase+a_-filtered-reviewed_yes.fasta > phyA.pep.fasta
 blastp -query phyA.pep.fasta -db malassezia_sympodialis_V01.protein -out blastp.out -evalue 1e-5 -outfmt 7 -num_threads 4
 
 
-#Nr注释
+# Nr注释
 mkdir -p ~/working/11.functional_annotation/nr
 cd ~/working/11.functional_annotation/nr
 wget ftp://ftp.ncbi.nlm.nih.gov/blast/db/FASTA/nr.gz
 makeblastdb -in nr -dbtype prot -parse_seqids -out nr
 gunzip nr.gz
-# 创建蛋白质数据库
+#  创建蛋白质数据库
 makeblastdb -in nr -dbtype prot -parse_seqids -out nr
 diamond blastp --db nr_fungi --query ../proteins.fasta --out Nr.xml --outfmt 5 --sensitive --max-target-seqs 20 --evalue 1e-5 --id 10 --index-chunks 1
 gzip -dc ~/00.incipient_data/data_for_functional_annotation/Nr.xml.gz > Nr.xml
@@ -33,28 +33,28 @@ cp Nr.txt ../functional_annotation.Nr.txt
 cp Nr_species_distribution.txt ../functional_annotation.Nr.species_distribution
 
 
-#Swiss-Prot 注释
+# Swiss-Prot 注释
 mkdir -p ~/working/11.functional_annotation/swiss-prot
 cd swiss-prot/
-#使用 ncbi-blast+ 进行 Swiss-Prot 注释
+# 使用 ncbi-blast+ 进行 Swiss-Prot 注释
 head -n 200 ../proteins.fasta > test.fasta
 blast.pl --CPU 8 --outfmt 5 -clean /opt/biosoft/bioinfomatics_databases/Swiss-Prot/uniprot_sprot test.fasta > blast.xml
-#使用diamond进行分析
-#dmnd 数据库相比 BLAST 的 .phr/.pin/.psq 格式，在比对速度上有显著提升，特别适合大规模蛋白质序列比对任务
-#构建diamond数据库文件diamond makedb --in uniprot_sprot.fasta -d uniprot_sprot
+# 使用diamond进行分析
+# dmnd 数据库相比 BLAST 的 .phr/.pin/.psq 格式，在比对速度上有显著提升，特别适合大规模蛋白质序列比对任务
+# 构建diamond数据库文件diamond makedb --in uniprot_sprot.fasta -d uniprot_sprot
 ln -sf /opt/biosoft/bioinfomatics_databases/Swiss-Prot/uniprot_sprot.dmnd ./ 
 diamond blastp --db uniprot_sprot --query ../proteins.fasta --out uniprot_sprot.xml --outfmt 5 --sensitive --max-target-seqs 20 --evalue 1e-5 --id 10 --index-chunks 1
 python3 parsing_blast_result.py --out-hit-confidence --suject-annotation uniprot_sprot.xml > uniprot_sprot.tab
 python3 gene_annnotation_from_SwissProt.py uniprot_sprot.tab > SwissProt.txt
 
 
-#COG
+# COG
 mkdir -p ~/working/11.functional_annotation/COG
 cd ~/working/11.functional_annotation/COG
-#构建COG/KOG数据库
-#wget ftp://ftp.ncbi.nih.gov/pub/COG/COG/whog
-#wget ftp://ftp.ncbi.nih.gov/pub/COG/COG/cog2003-2014.csv
-#diamond makedb --in protein.fasta -d database_name
+# 构建COG/KOG数据库
+# wget ftp://ftp.ncbi.nih.gov/pub/COG/COG/whog
+# wget ftp://ftp.ncbi.nih.gov/pub/COG/COG/cog2003-2014.csv
+# diamond makedb --in protein.fasta -d database_name
 ln -sf /opt/biosoft/bioinfomatics_databases/COG/kog.dmnd ./
 diamond blastp --db kog --query ../proteins.fasta --out kog.xml --outfmt 5 --sensitive --max-target-seqs 200 --evalue 1e-5 --id 10 --tmpdir /dev/shm --index-chunks 1
 cog_from_xml.pl --coverage 0.2 --evalue 1e-5  --db-fasta /opt/biosoft/bioinfomatics_databases/COG/kog.fasta --db-class ~/bin/cog/kog --fun-txt /opt/biosoft/bioinfomatics_databases/COG/fun.kog.txt kog.xml
@@ -66,45 +66,45 @@ cp out.pdf ../functional_annotation.KOG.pdf
 cp out.png ../functional_annotation.KOG.png
 
 
-#eggNOG 注释
+# eggNOG 注释
 mkdir -p ~/working/11.functional_annotation/eggNOG
 cd ~/working/11.functional_annotation/eggNOG/
 """
-# eggNOG官网的网页工具提交进行注释
-# http://eggnog-mapper.embl.de/提交蛋白序列
-# one-to-one orthology only; evalue: 0.001; score 60; query coverage: 20%; subject coverage: 20%
-# http://eggnog-mapper.embl.de/job_status?jobname=MM_1revx_hu
-# wget http://eggnog-mapper.embl.de/MM_1revx_hu/query_seqs.fa.emapper.annotations
-# wget http://eggnog-mapper.embl.de/MM_1revx_hu/query_seqs.fa.emapper.seed_orthologs
+#  eggNOG官网的网页工具提交进行注释
+#  http://eggnog-mapper.embl.de/提交蛋白序列
+#  one-to-one orthology only; evalue: 0.001; score 60; query coverage: 20%; subject coverage: 20%
+#  http://eggnog-mapper.embl.de/job_status?jobname=MM_1revx_hu
+#  wget http://eggnog-mapper.embl.de/MM_1revx_hu/query_seqs.fa.emapper.annotations
+#  wget http://eggnog-mapper.embl.de/MM_1revx_hu/query_seqs.fa.emapper.seed_orthologs
 """
-#本地eggNOG注释
-#创建conda环境，安装eggnog-mapper
-#conda create -n eggnog python=3.7
-#conda activate eggnog
-#conda install -c bioconda -c conda-forge eggnog-mapper
-#文件下载wget -c http://eggnog5.embl.de/download/emapperdb-5.0.2/eggnog.db.gz
-#文件下载wget -c http://eggnog5.embl.de/download/emapperdb-5.0.2/eggnog_proteins.dmnd.gz
+# 本地eggNOG注释
+# 创建conda环境，安装eggnog-mapper
+# conda create -n eggnog python=3.7
+# conda activate eggnog
+# conda install -c bioconda -c conda-forge eggnog-mapper
+# 文件下载wget -c http://eggnog5.embl.de/download/emapperdb-5.0.2/eggnog.db.gz
+# 文件下载wget -c http://eggnog5.embl.de/download/emapperdb-5.0.2/eggnog_proteins.dmnd.gz
 ln -sf /opt/biosoft/eggnog-mapper-2.1.2/data/eggnog_proteins.dmnd ./
 diamond blastp --db eggnog_proteins  --query ../proteins.fasta --out eggNOG.xml --outfmt 5 --sensitive --max-target-seqs 20 --evalue 1e-5 --id 10 --tmpdir /dev/shm --index-chunks 1
 python3 parsing_blast_result.py --no-header --max-hit-num 1 --hsp-num 1 eggNOG.xml | cut -f 1,2,11,12 > eggNOG.emapper.seed_orthologs
 /opt/biosoft/eggnog-mapper-2.1.2/emapper.py --cpu 16 -m no_search --annotate_hits_table eggNOG.emapper.seed_orthologs -o eggNOG--dbmem --override
 cp eggNOG.emapper.annotations ../functional_annotation.eggNOG.tab
-grep -v -P "^#" eggNOG.emapper.annotations | cut -f 1,8 > eggNOG.txt
+grep -v -P "^# " eggNOG.emapper.annotations | cut -f 1,8 > eggNOG.txt
 cp eggNOG.txt ../functional_annotation.eggNOG.txt
 
 
-#Interpro注释
+# Interpro注释
 mkdir ~/working/11.functional_annotation/interpro
 cd ~/working/11.functional_annotation/interpro/
-# 联网提交序列到EBI官网进行InterPro注释
-#python3 interproscan.pl ../proteins.fasta ZiyuMeng98@gmail.com interpro5 30
-#本地interpro注释
-#wget https://ftp.ebi.ac.uk/pub/software/unix/iprscan/5/5.73-104.0/interproscan-5.73-104.0-64-bit.tar.gz
-#由于文件较大，需要MD5校验完整性md5sum -c interproscan-5.73-104.0-64-bit.tar.gz.md5
-#tar -pxvzf
-#次运行前，需要执行初始化命令以下载并建立模型索引：python3 setup.py -f interproscan.properties
-# 本地InterPro注释，可以获得TSV、XML、GFF3、SVG和HTML结果。新版的InterPro开始不支持SVG和HTML结果，网页提交完全不支持SVG和HTML结果。
-#/opt/biosoft/interproscan/interproscan.sh --output-file-base out --cpu 8 --formats TSV,XML,GFF3 --goterms --input uncompleted2.fasta
+#  联网提交序列到EBI官网进行InterPro注释
+# python3 interproscan.pl ../proteins.fasta ZiyuMeng98@gmail.com interpro5 30
+# 本地interpro注释
+# wget https://ftp.ebi.ac.uk/pub/software/unix/iprscan/5/5.73-104.0/interproscan-5.73-104.0-64-bit.tar.gz
+# 由于文件较大，需要MD5校验完整性md5sum -c interproscan-5.73-104.0-64-bit.tar.gz.md5
+# tar -pxvzf
+# 次运行前，需要执行初始化命令以下载并建立模型索引：python3 setup.py -f interproscan.properties
+#  本地InterPro注释，可以获得TSV、XML、GFF3、SVG和HTML结果。新版的InterPro开始不支持SVG和HTML结果，网页提交完全不支持SVG和HTML结果。
+# /opt/biosoft/interproscan/interproscan.sh --output-file-base out --cpu 8 --formats TSV,XML,GFF3 --goterms --input uncompleted2.fasta
 cp ~/00.incipient_data/data_for_functional_annotation/interpro* ./
 grep IPR interpro.tsv | cut -f 1,12,13 | python3 gene_annotation_from_table.py > InterPro.txt
 cp interpro.tsv ../functional_annotation.InterPro.tab
@@ -114,16 +114,145 @@ cp interpro.html.tar.gz ../functional_annotation.InterPro.html.tar.gz
 cp interpro.svg.tar.gz ../functional_annotation.InterPro.svg.tar.gz
 
 
-#pfam注释
+# pfam注释
 mkdir -p ~/working/11.functional_annotation/pfam
 cd ~/working/11.functional_annotation/pfam/
 """
-#cd /opt/biosoft/hmmer-3.3.1/
-#wget http://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz
-#gunzip Pfam-A.hmm.gz
-#hmmpress Pfam-A.hmm   生成索引
+# cd /opt/biosoft/hmmer-3.3.1/
+# wget http://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz
+# gunzip Pfam-A.hmm.gz
+# hmmpress Pfam-A.hmm   生成索引
 """
 python3 para_hmmscan.py --outformat --cpu 4 --hmm-db /opt/biosoft/hmmer-3.3.1/Pfam-A.hmm ../proteins.fasta > Pfam.tab
 cut -f 1,2,7 Pfam.tab | tail -n +2 | python3 gene_annotation_from_table.py > Pfam.txt
 cp Pfam.tab ../functional_annotation.Pfam.tab
 cp Pfam.txt ../functional_annotation.Pfam.txt
+
+
+# GO注释
+mkdir -p ~/working/11.functional_annotation/GO
+cd ~/working/11.functional_annotation/GO
+# 整合eggNOG和InterPro中的GO注释结果
+python3 go_from_eggNOG_and_interpro.py ../eggNOG/eggNOG.emapper.annotations ../interpro/interpro.tsv > go.annot
+python3 go_reducing_go_number_para.py /opt/biosoft/go_class/bin/go-basic.obo go.annot 8 > go_reduced.annot
+sort go_reduced.annot > go.annot; rm go_reduced.annot
+python3 gene_annotation_from_table.py go.annot > GO.txt
+# GO wego分类图（按照goslim_agr.obo方法分了53类）
+/opt/biosoft/go_class/bin/annot2wego.pl go.annot > go.wego
+/opt/biosoft/go_class/bin/get_Genes_From_GO.pl /opt/biosoft/go_class/bin/go-basic.obo go.wego > go_class.tab
+/opt/biosoft/go_class/bin/go_svg.pl --outdir ./ --name out --color "green" --mark "Whole Genome Genes" --not "GO Class of whole genome genes of Malassezia sympodialis" go.wego
+sed -i 's/MovePer:0.125/MovePer:0.5/g; s/FontSize:[^[:space:]]*/FontSize:24/g' out.lst
+/opt/biosoft/go_class/svg/distributing_svg.pl out.lst out.svg
+/opt/biosoft/go_class/bin/changsvgsize.pl out.svg 150 -100
+convert out.svg out.png
+# GO分类
+python3 go_class.py /opt/biosoft/go_class/bin/go-basic.obo go.annot --go_class_method /opt/biosoft/go_class/bin/goslim_agr.obo > go_class.tab
+Read over /opt/biosoft/go_class/bin/go-basic.obo
+cp go.annot ../functional_annotation.GO.tab
+cp GO.txt ../functional_annotation.GO.txt
+cp out.svg ../functional_annotation.GO_class.svg
+cp out.png ../functional_annotation.GO_class.png
+cp go_class.tab ../functional_annotation.GO_class.tab
+
+
+# KAAS注释（KEGG）
+mkdir -p ~/working/11.functional_annotation/KAAS
+cd ~/working/11.functional_annotation/KAAS
+mkdir -p /home/train/13.functional_annotation/08.KAAS
+cd /home/train/13.functional_annotation/08.KAAS
+#  在 http://www.genome.jp/kaas-bin/kaas_main 网页工具中提交序列进行注释。需要填写邮箱信息，
+在网页中提交后需要再进入邮箱，点击邮件中的提交链接，才能开始计算。
+#  Selected organisms: hsa, mmu, rno, dre, dme, cel, ath, sce, cal, spo, ecu, pfa, cho, ehi, eco, nme, hpy, bsu, lla, mge, mtu, syn, aae, mja, ape, sce, dha, ncr, fox, ssl, afm, cpw, bze, tml, uma, mrt, cgi, hir
+#  注释完毕后，从填写的邮箱中进入注释完毕后的网页，下载注释结果 query.ko 文件。
+# https://www.genome.jp/kaas-bin/kaas_main?mode=user&id=1626238738&key=GdCfKFob
+# wget https://www.genome.jp/tools/kaas/files/dl/1626238738/query.ko
+
+cp ~/00.incipient_data/data_for_functional_annotation/query.ko ./
+cp ~/00.incipient_data/data_for_functional_annotation/ko00001.keg ./
+gene_annotation_from_kaas.pl query.ko > KEGG.txt
+cp KEGG.txt ../functional_annotation.KEGG.txt
+
+
+# # # # # 
+# 整合各种注释结果到一个表格中
+python3 gene_annotation_from_all.py --all-protein proteins.fasta --html --table-width 3500 --column-width-geneID 150 nr/Nr.txt swiss-prot/SwissProt.txt COG/kog.txt eggNOG/eggNOG.txt interpro/interpro.txt pfam/Pfam.txt GO/GO.txt KAAS/KEGG.txt > functional_annotation.all.html
+python3 gene_annotation_from_all.py /Nr.txt swiss-prot/SwissProt.txt COG/kog.txt eggNOG/eggNOG.txt interpro/interpro.txt pfaPfam.txt GO/GO.txt KAAS/KEGG.txt > functional_annotation.all.tab 2> functional_annotatioall.stats
+
+
+# GO/KEGG富集分析
+mkdir -p ~/working/11.functional_annotation/GO_enrichment
+cd ~/working/11.functional_annotation/GO_enrichment
+cp GO/go.annot go.annot
+cp /home/train/00.incipient_data/data_for_functional_annotation/DEG.up.list ./
+cp /home/train/00.incipient_data/data_for_functional_annotation/DEG.down.list ./
+awk -F'\t' 'NR>1 {print $1 "\t" $6}' ~/working/09.RNA_seq_analysis/cufflinks/cuffnorm/edgeR_DESeq2/rawCount.matrix.S2_vs_S4.P0.001.C2.S2-UP.subset > DEG.down.list
+awk -F'\t' 'NR>1 {print $1 "\t" $6}' ~/working/09.RNA_seq_analysis/cufflinks/cuffnorm/edgeR_DESeq2/rawCount.matrix.S2_vs_S4.P0.001.C2.S4-UP.subset > DEG.up.list
+python3 go_enrichment.py --tmp_prefix go_enrichment_up go-basic.obo go.annot DEG.up.list > go_enrichment.up.txt
+python3 go_enrichment.py --tmp_prefix go_enrichment_down go-basic.obo go.annot DEG.down.list > go_enrichment.down.txt
+rm go_enrichment_*
+
+mkdir -p ~/working/11.functional_annotation/KEGG_enrichment
+cd ~/working/11.functional_annotation/KEGG_enrichment
+cp ../KAAS/ko00001.keg ko00001.keg
+cp ../KAAS/query.ko query.ko
+cp ../GO_enrichment/DEG.* ./
+python3 pathview.py --cpu 16 --kokeg ko00001.keg query.ko DEG.up.list DEG.down.list
+
+
+# 真菌的Transcription Fatcor注释
+mkdir -p ~/working/11.functional_annotation/TF
+cd ~/working/11.functional_annotation/TF
+python3 interpro2tf_for_Fungi.py functional_annotation.InterPro.tab --out_prefix TF
+
+
+# CAZyme注释
+mkdir -p ~/working/11.functional_annotation/CAZyme
+cd ~/working/11.functional_annotation/CAZyme
+# conda install -c bioconda run-dbcan
+# wget http://bcb.unl.edu/dbCAN2/download/dbCAN-HMMdb-V9.txt
+# wget http://bcb.unl.edu/dbCAN2/download/CAZyDB.07262023.fa
+# wget http://bcb.unl.edu/dbCAN2/download/Fam-substrate.txt
+python run_dbcan.py ../proteins.fasta --out_dir ./ --db_dir /opt/biosoft/bioinfomatics_databases/dbCAN_V9/dbCAN-HMMdb-V9.txt --dia_cpu 8 --hmm_cpu 8
+
+
+# secreted protein分泌蛋白注释
+mkdir -p ~/working/11.functional_annotation/secreted_protein
+cd ~/working/11.functional_annotation/secreted_protein
+# 首先，进行信号肽分析,分泌蛋白都具有信号肽
+mkdir singalp
+cd singalp
+/opt/biosoft/signalp-5.0/bin/signalp -batch 30000 -org euk -fasta ../../proteins.fasta -gff3 -mature
+cd ..
+# 再进行跨膜区分析。若具有跨膜区，则蛋白会和膜进行结合，从而固定到膜上，不会成为分泌蛋白
+mkdir TMHMM
+cd TMHMM
+/opt/biosoft/tmhmm-2.0c/bin/tmhmm ../singalp/proteins_mature.fasta > tmhmm.out
+grep "Number of predicted TMHs:  0" tmhmm.out | perl -p -e 's/#\s+(\S+).*/$1/' > genes_without_TMHs.list
+python3 fasta_extract_subseqs_from_list.py ../../proteins.fasta genes_without_TMHs.list > ../candidate_secreted_proteins.fasta
+cd ..
+# 再分析GPI锚定位点。GPI锚定蛋白和膜结合，从而固定到膜上，不会成为分泌蛋白。
+mkdir PredGPI
+cd PredGPI
+# http://gpcr.biocomp.unibo.it/predgpi/pred.htm
+# 一次最多允许提交500条序列。提交后点击download。
+# 结果文件是fasta格式文件，其头部包含结果信息。
+# PredGPI.fasta
+# 取阈值FDR 0.5%。
+# FDR <= 0.1%    GPI-anchored: highly probable
+# FDR <= 0.5%    GPI-anchored: probable
+# FDR <= 1.0%    GPI-anchored: lowly probable
+awk '/^>/ {for(i=1;i<=NF;i++) if($i~/FPrate:/) {rate=substr($i,8); if(rate+0 <= 0.01) print substr($1,2)}}' PredGPI.fasta > GPI_gene.list
+# 31个基因有GPI锚定位点
+python3 fasta_extract_subseqs_from_list.py --reverse ../candidate_secreted_proteins.fasta GPI_gene.list > ../candidate_secreted_proteins.NO_GPI.fasta
+# 最后，进行亚细胞定位，选取定位到胞外的蛋白作为分泌蛋白基因
+mkdir BUSCA
+cd BUSCA
+cd BUSCA
+# http://busca.biocomp.unibo.it/
+# 一次最多允许提交500条序列。选择Fungi类型，点击Start prediction。
+# http://busca.biocomp.unibo.it/240af241-5353-4ad0-bd46-1794f4cdb8a1/showresult/
+# 下载表格格式结果：XXX.csv
+python3 busca_csv_list_stats.py BUSCA.out.csv > extracellular_gene.list 2> BUSCA.out.csv.stats
+# 查看stats文件，118个蛋白定位于胞外
+python3 fasta_extract_subseqs_from_list.py ../candidate_secreted_proteins.NO_GPI.fasta extracellular_gene.list > ../candidate_secreted_proteins.NO_GPI.extracellular.fasta
+# 最终结果是candidate_secreted_proteins.NO_GPI.extracellular.fasta
