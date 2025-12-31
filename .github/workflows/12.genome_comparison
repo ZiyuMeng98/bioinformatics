@@ -50,7 +50,7 @@ mkdir -p ~/working/12.genome_comparison/b.OrthoFinder
 cd ~/working/12.genome_comparison/b.OrthoFinder
 mkdir -p compliantFasta
 cd compliantFasta
-for A in ../a.preparing_data/*.protein.fasta;do
+for A in ../a.preparing_data/*.protein.fasta; do
     i="$(basename "$A" .protein.fasta)"
     echo "processing protein: $i"
     sed "s/>/>${i}|/" ../a.preparing_data/${i}.protein.fasta > compliantProtein/${i}.fasta
@@ -90,8 +90,7 @@ for i in `cat orthologGroups.txt`; do
 done > command.linsi.list
 ParaFly -c command.linsi.list -CPU 8
 # 将Protein序列比对结果转换为Codon序列比对结果
-for i in `cat orthologGroups.txt`
-do
+for i in `cat orthologGroups.txt`; do
     echo "python3 protein_alignment_cds_alignemnt.py orthologGroups_Protein/$i.fasta.align orthologGroups_CDS/$i.fasta > orthologGroups_CDS/$i.fasta.align"  
 done > command.protein_alignment_cds_alignemnt.list
 ParaFly -c command.protein_alignment_cds_alignemnt.list -CPU 8  ls orthologGroups_CDS/*.fasta.align| wc -l
@@ -107,8 +106,7 @@ ParaFly -c command.Gblocks.list -CPU 8
 for i in $(cat orthologGroups.txt); do
     sed 's/^\(>[^[:space:]]*\).*/\1/; s/ //g' "orthologGroups_CDS/$i.fasta.align-gb" > "orthologGroups_CDS/$i.fasta.align-gb.fasta"
 done
-for i in `cat orthologGroups.txt`
-do
+for i in `cat orthologGroups.txt`; do
     echo "/opt/biosoft/RAxML-8.2.12/usefulScripts/convertFasta2Phylip.sh orthologGroups_CDS/$i.fasta.align-gb.fasta > orthologGroups_CDS/$i.phy"
 done > command.convert_fasta_phylip.list
 ParaFly -c command.convert_fasta_phylip.list -CPU 8
@@ -118,61 +116,292 @@ mkdir FastTree
 cd FastTree
 mafft --auto --thread 16 ../allSingleCopyOrthologsAlign.Codon.fasta > aligned.fasta  #thread在服务器能承受的范围越大越好
 FastTree -nt -gtr -gamma aligned.fasta > tree_abbr.FastTree
+cp tree_abbr.FastTree tree_fullName.FastTree
+cut -f 1,2 ../../a.preparing_data/source.txt | while read abbr full; do
+    sed -i "s/$abbr/$full/g" tree_fullName.FastTree
+done
+cp tree* ../
+cd ..
+
+mkdir iqtree
+cd iqtree
+/opt/biosoft/iqtree/iqtree-2.2.0-Linux/bin/iqtree2 -s ../FastTree/aligned.fasta -m GTR+G -bb 1000 -nt 64 -mem 300G
+"""
+# 真实数据处理时，数据量较大时，推荐按如下步骤使用raxmlHPC-HYBRID-AVX进行并行化计算
+# export PKG_CONFIG_PATH=/opt/sysoft/mpich-3.3/lib/pkgconfig:$PKG_CONFIG_PATH
+# export LD_LIBRARY_PATH=/opt/sysoft/mpich-3.3/lib:$LD_LIBRARY_PATH
+# export C_INCLUDE_PATH=/opt/sysoft/mpich-3.3/include:$C_INCLUDE_PATH
+# export PATH=/opt/sysoft/mpich-3.3/bin:$PATH
+# export LD_PRELOAD=/opt/sysoft/mpich-3.3/lib/libmpi.so
+#/opt/biosoft/RAxML-8.2.12/usefulScripts/convertFasta2Phylip.sh ../FastTree/aligned.fasta > aligned.fasta.phy
+# mpirun -np 15 /opt/biosoft/RAxML-8.2.12/raxmlHPC-HYBRID-AVX -f a -x 12345 -p 12345 -# 1000 -m GTRGAMMAX -s allSingleCopyOrthologsAlign.Codon.phy -n out_codon -T 8
+#cp RAxML_bipartitions.out_codon tree_abbr.RAxML
+#cp tree_abbr.RAxML tree_fullName.RAxML
+#cut -f 1,2 ../../a.preparing_data/source.txt | while read abbr full; do
+    #sed -i "s/$abbr/$full/g" tree_fullName.RAxML
+#done
+#cp tree* ../
+"""
+
+# FigTree画树，并输出树文件信息
+java -jar /opt/biosoft/FigTree_v1.4.4/lib/figtree.jar mytree.contree
+# parub  Agaricomycetidae(伞菌亚纲); Boletales(牛肝菌目)
+# sccit  Agaricomycetidae(伞菌亚纲); Boletales(牛肝菌目)
+# laame  Agaricomycetidae(伞菌亚纲); Agaricales(伞菌目)
+# plost  Agaricomycetidae(伞菌亚纲); Agaricales(伞菌目)
+# phgig  Agaricomycetes incertae sedis; Polyporales(多孔菌目)
+# lasul  Agaricomycetes incertae sedis; Polyporales(多孔菌目)
+cd ../
+"""
+# 7. 可能有部分单拷贝同源基因不利于构建系统发育树，将这些基因挑出来去除掉后，有利于构建更准确的物种树
+# 此步骤不是必须的，操作有点复杂，对进化树准确性提高不多。但当RAxML树局部区域拓扑结构不正确，进行修改后，没有枝长数据后，可以考虑使用PAML软件的baseml进行枝长计算。
+# 使用PAML软件的baseml对各个单拷贝同源基因进行枝长分析，再与标准树进行比较，剔除异常的基因。
+mkdir paml_baseml
+cd paml_baseml
+# 7.1 根据RAxML的结果提取系统发育树的拓扑结构
+echo "6 1" > input.trees
+echo "(((parub,sccit),(laame,plost)),(phgig,lasul));" >> input.trees
+# 7.2 分别对各个单拷贝同源基因的密码子比对结果用codeml进行系统发育分析，得到每个各个同源基因的树信息
+mkdir OG_trees
+
+for i in `cat ../orthologGroups.txt`; do
+    echo "calculating_branchLength_by_baseml.pl ../orthologGroups_CDS/$i.phy input.trees > OG_trees/$i.tree"
+done > command.calculating_branchLength_by_baseml.list
+
+for i in `cat ../orthologGroups.txt`; do
+    echo "python3 calculating_branchLength_by_baseml.py ../orthologGroups_CDS/$i.phy input.trees > OG_trees/$i.tree"
+done > command.calculating_branchLength_by_baseml.list
+
+ParaFly -c command.calculating_branchLength_by_baseml.list -CPU 8
+# 7.3 整合所有单拷贝同源基因进化树。整合原理：先计算每个树的总枝长，利用其中位数对所有单拷贝同源基因树进行标准化，使每个树的总枝长等于该中位数；再对进化树的每个分支取所有基因的中位数作为其枝长。
+get_integrated_tree_from_multiple_trees.pl OG_trees/* > standard.tree
+# 7.4 分析每个各个同源基因树枝长和标准树的平均偏差百分比：单拷贝同源基因某分枝的偏差百分比 = (绝对值{单拷贝同源基因树某分>枝的枝长 - 标准树中该分枝的枝长} / 标准树中该分枝的枝长) * 100%；然后计算所有分枝偏差百分比的平均值。
+for i in `cat ../orthologGroups.txt`; do
+    echo "calculating_branchLength_bias_percentage_of_two_trees.pl standard.tree OG_trees/$i.tree > OG_trees/$i.bias"
+done > command.calculating_branchLength_bias_percentage_of_two_trees.list
+for i in `cat ../orthologGroups.txt`; do
+    echo "python3 calculating_branchLength_bias_percentage_of_two_trees.py standard.tree OG_trees/$i.tree > OG_trees/$i.bias"
+done > command.calculating_branchLength_bias_percentage_of_two_trees.list
+
+ParaFly -c command.calculating_branchLength_bias_percentage_of_two_trees.list -CPU 8
+awk 'FNR==1 {gsub(/%/, "", $0); printf "%s\t%s\n", FILENAME, $0}' OG_trees/*.bias | sed 's|OG_trees/\(.*\)\.bias|\1|' > bias.txt
+# 剔除和综合树差异较大的单拷贝同源基因。第一轮按左侧99%置信区间保留；第二轮按左侧95%置信区间保留。
+remove_extremum_through_normal_distribution.pl --data_column 4 --confidence_interval 5 bias.txt > keep_bias_99.txt
+remove_extremum_through_normal_distribution.pl --data_column 4 --confidence_interval 2 keep_bias_99.txt > keep_bias_95.txt
+
+python3 remove_extremum_through_normal_distribution.py --data_column 4 --confidence_interval 5 bias.txt > keep_bias_99.txt
+python3 remove_extremum_through_normal_distribution.py --data_column 4 --confidence_interval 2 keep_bias_99.txt > keep_bias_95.txt
+cut -f 1 keep_bias_95.txt > keep_OG.txt
+# 7.5 剔除和综合树差异较大的单拷贝同源基因，利用剩下的基因整合出更准确的综合树。
+get_integrated_tree_from_multiple_trees.pl --method median `perl -pe 's#^#OG_trees/#; s/\n/.tree /' keep_OG.txt` > tree_abbr.baseml_median
+get_integrated_tree_from_multiple_trees.pl --method mean `perl -pe 's#^#OG_trees/#; s/\n/.tree /' keep_OG.txt` > tree_abbr.baseml_mean
+
+python3 get_integrated_tree_from_multiple_trees.py --method median `perl -pe 's#^#OG_trees/#; s/\n/.tree /' keep_OG.txt` > tree_abbr.baseml_median
+python3 get_integrated_tree_from_multiple_trees.py --method mean `perl -pe 's#^#OG_trees/#; s/\n/.tree /' keep_OG.txt` > tree_abbr.baseml_mean
+cp tree_abbr.baseml_median tree_fullName.baseml_median
+cp tree_abbr.baseml_mean tree_fullName.baseml_mean
+
+cut -f 1,2 ../../a.preparing_data/source.txt | perl -p -e 's/\t/\t\"/; s/$/\"/;' | perl -p -e 's#\s+#/#; s#^#perl -p -i -e "s/#; s#\n$#/" tree_fullName.baseml_median\n#;' | perl -p -e 's#/\"#/\\\"#; s#\"/#\\\"/#;' | sh
+
+cut -f 1,2 ../../a.preparing_data/source.txt | while read abbreviation full_name; do
+    sed -i "s/$abbreviation/$full_name/g" tree_fullName.baseml_median
+done
+
+cut -f 1,2 ../../a.preparing_data/source.txt | perl -p -e 's/\t/\t\"/; s/$/\"/;' | perl -p -e 's#\s+#/#; s#^#perl -p -i -e "s/#; s#\n$#/" tree_fullName.baseml_mean\n#;' | perl -p -e 's#/\"#/\\\"#; s#\"/#\\\"/#;' | sh
+
+cut -f 1,2 ../../a.preparing_data/source.txt | while read abbreviation full_name; do
+    sed -i "s/$abbreviation/$full_name/g" tree_fullName.baseml_mean
+done
+
+cp tree_* ../
+cd ../../
+"""
+
+
+# d. 使用PAML软件的mcmctree进行物种分歧时间计算
+mkdir -p ~/working/12.genome_comparison/d.divergence_time
+cd ~/working/12.genome_comparison/d.divergence_time
+# (1) 准备Newick格式的树文件，根据RAxML的结果提取系统发育树的拓扑结构
+echo "6 1" > input.trees
+echo "(((laame,plost),(parub,sccit)'>0.76<1.08')'>2.29<2.66',(lasul,phgig));" >> input.trees
+# Paxillus rubicundulus <=> Scleroderma citrinum        89MYA 76-108MYA
+# Paxillus rubicundulus <=> Laccaria amethystina	246MYA 229-266MYA
+# http://www.timetree.org/ 查询分析时间 有化石时间更好
+# (2) 准备多序列比对Phylip格式输入文件，可以综合三个位点核酸序列的多序列比对文件
+/opt/biosoft/RAxML-8.2.12/usefulScripts/convertFasta2Phylip.sh allSingleCopyOrthologsAlign.Codon.fasta > input.txt
+sed -i 's/[[:space:]]\+/  /g' input.txt
+# (3) 准备paml mcmctree配置文件
+"""
+# 削减计算量
+sed '
+     s/mtCDNApri123/input/
+     s/mtCDNApri/input/
+     s/<1\.0/<4.0/
+     s/^\([[:space:]]*ndata =\) .*/\1 1/
+     s/usedata = .*/usedata = 3/
+     s/model = .*/model = 7/
+     s/alpha = .*/alpha = 0.5/
+     s/ncatG = .*/ncatG = 5/
+     s/cleandata = .*/cleandata = 0/
+     s/burnin = .*/burnin = 800000/
+     s/sampfreq = .*/sampfreq = 100/
+     s/nsample = .*/nsample = 20000/
+ ' /opt/biosoft/paml4.9i/examples/DatingSoftBound/mcmctree.ctl > mcmctree.ctl
+"""
+# 正常计算量
+    sed '
+        s/mtCDNApri123/input/
+        s/mtCDNApri/input/
+        s/<1\.0/<8.0/
+        s/^\([[:space:]]*ndata =\) .*/\1 1/
+        s/usedata = .*/usedata = 3/
+        s/model = .*/model = 7/
+        s/alpha = .*/alpha = 0.5/
+        s/ncatG = .*/ncatG = 5/
+        s/cleandata = .*/cleandata = 0/
+        s/burnin = .*/burnin = 4000000/
+        s/sampfreq = .*/sampfreq = 100/
+        s/nsample = .*/nsample = 100000/
+    ' /opt/biosoft/paml4.9i/examples/DatingSoftBound/mcmctree.ctl > mcmctree.ctl
+# (4) 运行PAML软件的mcmctree (若数据量较大，则每当程序调用baseml时，按ctrl + c终止，再手动并行化运行baseml)
+# 当看到类似Approximate likelihood (version 4.9i, September 2018)
+# Running baseml to calculate gradients...
+# Branch length optimization ...
+mcmctree mcmctree.ctl
+cp out.BV in.BV
+# (5) 手动并行化运行baseml
+#echo "mkdir tmp0001; cd tmp0001; ln -s ../input* ../tmp0001* ./; baseml tmp0001.ctl;
+#mkdir tmp0002; cd tmp0002; ln -s ../input* ../tmp0002* ./; baseml tmp0002.ctl;
+#mkdir tmp0003; cd tmp0003; ln -s ../input* ../tmp0003* ./; baseml tmp0003.ctl;" > command.baseml.list
+#ParaFly -c command.baseml.list -CPU 3
+#cat tmp0001/rst2 tmp0002/rst2 tmp0003/rst2 > in.BV
+# (6) 使用mcmctree进行approximate likelihood分析
+sed -i 's/usedata = .*/usedata = 2    * 0:/' mcmctree.ctl
+mkdir run01 run02
+cp input.txt input.trees mcmctree.ctl in.BV run01
+cp input.txt input.trees mcmctree.ctl in.BV run02
+echo 'cd run01; mcmctree mcmctree.ctl &> mcmctree.log
+cd run02; mcmctree mcmctree.ctl &> mcmctree.log' > command.mcmctree.list
+ParaFly -c command.mcmctree.list -CPU 2
+# (7) 比较两次运行的MCMC树，若差异较小，则认可其结果
+python3 -c "
+import re
+import sys
+with open('run01/FigTree.tre', 'r') as f:
+    for line in f:
+        result = re.sub(r'(\d+\.\d+)', 
+                       lambda m: str(float(m.group(1)) * 100), 
+                       line)
+        sys.stdout.write(result)
+" > tree01.nex
+python3 -c "
+import re
+import sys
+with open('run02/FigTree.tre', 'r') as f:
+    for line in f:
+        result = re.sub(r'(\d+\.\d+)', 
+                       lambda m: str(float(m.group(1)) * 100), 
+                       line)
+        sys.stdout.write(result)
+" > tree02.nex
+awk '/UTREE.*=/ {
+     sub(/^.*UTREE[[:space:]]*=[[:space:]]*/, "")
+     gsub(/\[[^]]*\]/, "")
+     sub(/;.*$/, "")
+     print
+ }' tree01.nex > tree01.txt
+awk '/UTREE.*=/ {
+     sub(/^.*UTREE[[:space:]]*=[[:space:]]*/, "")
+     gsub(/\[[^]]*\]/, "")
+     sub(/;.*$/, "")
+     print
+ }' tree02.nex > tree02.txt
+python3 calculating_branchLength_bias_percentage_of_two_trees.py --no_normalization_of_total_branch_length tree01.txt tree02.txt > bias_of_2runs.txt
+python3 -c "
+import re
+with open('run01/FigTree.tre', 'r') as infile, open('tree_abbr.mcmctree', 'w') as outfile:
+    for line in infile:
+        result = re.sub(r'(\d+\.\d+)', 
+                       lambda m: str(float(m.group(1)) * 100), 
+                       line)
+        outfile.write(result)
+"
+# (8) 将树信息中的简称换成属名和种名全称
+cp tree_abbr.mcmctree tree_fullName.mcmctree
+cut -f 1,2 ../a.preparing_data/source.txt | while read abbreviation full_name; do
+    sed -i "s/$abbreviation/$full_name/g" tree_fullName.mcmctree
+done
+sed -e 's/\[[^]]*\]//g' -e 's/{[^}]*}//g' tree_fullName.mcmctree > tree_fullName.clean.mcmctree
+java -jar /opt/biosoft/FigTree_v1.4.4/lib/figtree.jar tree_fullName.mcmctree
 
 
 
+# e.CAFE进行基因家族扩张分析
+mkdir -p ~/working/12.genome_comparison/e.cafe
+cd ~/working/12.genome_comparison/e.cafe
+# 根据 orthomcl 结果得到基因家族的数量信息
+python3 orthomcl_extract_ortholog_seqs.py --out_directory orthologGroups_CDS --out_tab_for_CAFE orthomcl2cafe.tab --species_ratio 0.4 --single_copy_species_ratio 0.0 --copy_num 1000 --max_seq_length 100000 ../b.OrthoFinder/groups.txt ../b.OrthoFinder/compliantCDS
+# 提取至少在3个species中存在该 gene family 的OGs 。
+# tree后要使用上一步的分歧树文件
+echo '#!/opt/biosoft/CAFE-4.2.1/bin/cafe
+version
+date
+
+load -i orthomcl2cafe.tab -t 8 -p 0.01
+tree (((laame:185.931,plost:185.931):55.4361,(parub:102.5601,sccit:102.5601):138.807):23.4352,(lasul:208.025,phgig:208.025):56.7774);
+
+lambda -s
+report out' > cafe_command
+/opt/biosoft/CAFE-4.2.1/bin/caferror.py -i cafe_command -e 0.1
+parsing_cafe_out.pl caferror_1/cafe_final_report.cafe
+cd ../                   
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# f. 使用PAML软件的codeml进行正选择基因分析
+mkdir -p ~/working/12.genome_comparison/f.PSG_analysis
+cd ~/working/12.genome_comparison/f.PSG_analysis
+# (1) 准备同源基因的密码子比对结果Phylip格式文件及其sub tree文件
+# 选取至少在4个物种中出现的同源基因
+python3 orthomcl_extract_ortholog_seqs.py --out_directory orthologGroups_CDS --species_ratio 0.6 --single_copy_species_ratio 0.0 --copy_num 1000 --max_seq_length 100000 ../b.OrthoFinder/groups.txt ../b.OrthoFinder/compliantCDS
+python3 orthomcl_extract_ortholog_seqs.py --out_directory orthologGroups_Protein --species_ratio 0.6 --single_copy_species_ratio 0.0 --copy_num 1000 --max_seq_length 100000 --compliantFasta_dir_for_calculating_seq_length ../b.OrthoFinder/compliantCDS/ ../b.OrthoFinder/groups.txt ../b.OrthoFinder/compliantProtein/
+for file in orthologGroups_Protein/*.fasta; do
+    sed -i 's/\*/X/g' "$file"
+done
+ls orthologGroups_Protein/*.fasta | xargs -I {} basename {} .fasta > orthologGroups.txt
+# 对同源基因的蛋白序列进行多序列比对
+for i in `cat orthologGroups.txt`; do 
+    echo "/opt/biosoft/mafft/bin/linsi orthologGroups_Protein/$i.fasta > orthologGroups_Protein/$i.fasta.align"
+done > command.mafft.list
+#ParaFly -c command.mafft.list -CPU 8
+for i in `cat orthologGroups.txt`
+do
+    echo "python3 protein_alignment_cds_alignemnt.py orthologGroups_Protein/$i.fasta.align orthologGroups_CDS/$i.fasta > orthologGroups_CDS/$i.fasta.align"
+done > command.protein_alignment_cds_alignemnt.list
+ParaFly -c command.protein_alignment_cds_alignemnt.list -CPU 8
+sed -i 's/^\(>[[:alnum:]_]\+\).*/\1/' orthologGroups_CDS/*.fasta.align
+# 将多序列比对结果转换为Phylip格式
+for i in $(cat orthologGroups.txt); do
+    sed 's/^\(>[^[:space:]]*\).*/\1/; s/ //g' "orthologGroups_CDS/$i.fasta.align" > "orthologGroups_CDS/$i.fasta.align.fasta"
+done
+for i in `cat orthologGroups.txt`; do
+    echo "/opt/biosoft/RAxML-8.2.12/usefulScripts/convertFasta2Phylip.sh orthologGroups_CDS/$i.fasta.align.fasta > orthologGroups_CDS/$i.phy"
+done > command.convertFasta2Phylip.list
+ParaFly -c command.convertFasta2Phylip.list -CPU 8
+rm -rf orthologGroups_CDS/*.fasta*
+# (2) 通过对同源基因序列之间两两计算dn/ds方法，筛选候选的正选择基因
+mkdir dnds_yn00
+for i in `cat orthologGroups.txt`; do
+    echo "~/rmpl/calculating_omega_by_yn00.pl --omega_for_PSG 1.0 --input_tree tree.txt orthologGroups_CDS/$i.phy > dnds_yn00/$i.txt 2> dnds_yn00/$i.stats"
+done > command.calculating_omega_by_yn00.list
+parallel -j 8 < command.calculating_omega_by_yn00.list
+rename PSGyes PSGyes.dnds_yn00 orthologGroups_CDS/*.phy.PSGyes
+ls orthologGroups_CDS/*.phy.PSGyes.dnds_yn00 2>/dev/null | sed 's/.*\///; s/\.phy\.PSGyes\.dnds_yn00$//' > PSG_yn00.list
+# 使用ML方法计算dn/ds 
+mkdir dnds_ML
+for i in `cat orthologGroups.txt`; do
+    echo "python3 ~/rmpl/calculating_omega_by_codeml.py --omega_for_PSG 1.0 orthologGroups_CDS/$i.phy tree.txt > dnds_ML/$i.txt 2> dnds_ML/$i.stats"
+done > command.calculating_omega_by_ML.list
+parallel -j 8 < command.calculating_omega_by_ML.list
 
 
 
