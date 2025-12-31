@@ -1,0 +1,189 @@
+# 数据准备
+mkdir -p ~/working/12.genome_comparison/a.preparing_data
+cd ~/working/12.genome_comparison/a.preparing_data
+# ncbi收集数据
+# 1. 通过NCBI的Genome数据库(https://www.ncbi.nlm.nih.gov/genome)查找目标物种的信息
+# 2. 手工生成文件source.txt，该文件前4列为：物种缩写名（推荐为属名前2个字母+种名前3个字母）、双名法拉丁文物种名、NCBI的Genome数据库网址、从NCBI下载的数据文件前缀。
+# 3. 该文件前第一列用于后续的数据文件名前缀、第二列用于后续将结果中的物种名缩写转换成物种名全称、第三列用于数据的批量化下载。此外，手动编辑文件source.txt时，可以生成更多的列，记录其它基因组信息
+echo -e "parub\tPaxillus rubicundulus\thttps://www.ncbi.nlm.nih.gov/genome/35925
+sccit\tScleroderma citrinum\thttps://www.ncbi.nlm.nih.gov/genome/18213
+laame\tLaccaria amethystina\thttps://www.ncbi.nlm.nih.gov/genome/17383
+plost\tPleurotus ostreatus\thttps://www.ncbi.nlm.nih.gov/genome/909?genome_assembly_id=202364
+lasul\tLaetiporus sulphureus\thttps://www.ncbi.nlm.nih.gov/genome/17416
+phgig\tPhlebiopsis gigantea\thttps://www.ncbi.nlm.nih.gov/genome/18214" > source.txt
+# 批量化下载数据：基因组序列和基因结构注释文件
+while IFS=$'\t' read -r col1 col2 url; do
+    if [ -n "$url" ]; then
+        prefix=$(curl -s "$url" | grep -o 'href="[^"]*_genomic\.gff\.gz"' | sed 's/href="//;s/_genomic\.gff\.gz"//' | sed 's/.*\///')
+        if [ -n "$prefix" ]; then
+            echo "wget ${prefix}_genomic.gff.gz -O ${col1}.genomic.gff.gz"
+            echo "wget ${prefix}_genomic.fna.gz -O ${col1}.genomic.fna.gz"
+        fi
+    fi
+done < source.txt > command.download.list
+ParaFly -c command.download.list -CPU 16
+tar -zxf genomics_data_from_NCBI.tar.gz
+# 解压并处理所有文件，对NCBI的GFF文件进行格式修正。默认下NCBI的GFF格式不太正确，且其基因ID编号比较乱
+# 对NCBI的GFF3文件进行整理，仅保留含有mRNA信息的基因，修正尾部的CDS（有些NCBI的注释结果中最后一个CDS是不包含终止密码子的，修正同一条链上存在重叠的基因情况，并对基因id进行重命名
+# 最后，得到所有基因的Protein和CDS序列。若一个基因存在多个可变剪接，则仅保留CDS最长的转录本信息
+for FNA in *.genomic.fna.gz;do
+    i="${FNA%%.genomic.fna.gz}"
+    gff_file="${i}.genomic.gff.gz"
+    if [[ -f "$gff_file" ]]; then
+       echo "processing: $i"
+       gzip -dc $i.genomic.gff.gz > $i.genome.gff
+       gzip -dc $i.genomic.fna.gz > $i.genome.fasta
+       echo "finish: ${i}.fna.gz"
+       /opt/biosoft/geta/bin/GFF3Clear --coverage 0.3  --gene_code_length 5 --gene_prefix $i --genome $i.genome.fasta $i.genome.gff > $i.geneModels.gff3 2> $i.GFF3Clear.log
+       /opt/biosoft/geta/bin/gff3ToGtf.pl $i.genome.fasta $i.geneModels.gff3 > $i.geneModels.gtf 2> $i.gff3ToGtf.log
+       /opt/biosoft/geta/bin/eukaryotic_gene_model_statistics.pl $i.geneModels.gtf $i.genome.fasta $i > $i.statistics
+       echo "done: $i"
+    else
+       echo "warning: GFF file for $i not found, skipping..." >&2
+    fi
+done
+
+
+
+# OrthoFinder同源基因聚类分析
+mkdir -p ~/working/12.genome_comparison/b.OrthoFinder
+cd ~/working/12.genome_comparison/b.OrthoFinder
+mkdir -p compliantFasta
+cd compliantFasta
+for A in ../a.preparing_data/*.protein.fasta;do
+    i="$(basename "$A" .protein.fasta)"
+    echo "processing protein: $i"
+    sed "s/>/>${i}|/" ../a.preparing_data/${i}.protein.fasta > compliantProtein/${i}.fasta
+    echo "processing CDS: $i"
+    sed "s/>/>${i}|/" ../a.preparing_data/${i}.CDS.fasta > compliantCDS/${i}.fasta
+done
+# 默认设置下输出文件夹在输入文件夹里面，使用-o参数设置输出文件夹路径。使用-op参数设置运行diamond前终止，以手动运行diamond并设置更严格的BLASTP阈值。
+orthofinder -f compliantFasta -o OrthoFinder -op > command.diamond.list
+# 修改diamond参数，手动BLASTP分析并过滤比对结果
+awk '/diamond blastp/ { gsub(/--compress 1/, ""); gsub(/\.txt/, ".xml"); gsub(/ -e [^ ]*/, " --evalue 1e-5"); gsub(/ -p 1 /, " -p 4 "); print $0 " --outfmt 5 --max-target-seqs 500 --id 10"; next } {next}' command.diamond.list > tmp && mv tmp command.diamond.list
+grep -o '[^ ]*\.xml' command.diamond.list | while read xml_file; do
+    base="${xml_file%.xml}"
+    echo "parsing_blast_result.pl --no-header --max-hit-num 500 --evalue 1e-9 --CIP 0.3 --query-coverage 0.5 --db-query 0.5 $xml_file | gzip -c - > $base.txt.gz"
+done > command.parsing_blast_result.list
+ParaFly -c command.parsing_blast_result.list -CPU 8
+# 继续运行OrthoFinder命令进行直系同源基因分析
+OrthoFinderWorkingDir=$(head -n 1 command.diamond.list | grep -o -- '-d [^ ]*/' | sed 's/-d //;s|/$||')
+/opt/biosoft/OrthoFinder/orthofinder -b $OrthoFinderWorkingDir -og
+# 得到直系同源基因聚类结果groups.txt
+python3 orthomcl_mcl2Groups.py OrthoFinder/*/WorkingDirectory/OrthoFinder/*/Orthogroups/Orthogroups.txt
+ln -sf groups.OG.txt groups.txt
+# 进行同源基因数量的统计
+cat groups.OG.txt groups.PG.txt groups.filtered.txt > groups.All.txt
+python3 orthomcl_genes_number_stats.py groups.All.txt compliantProtein > genes_number_stats.txt
+
+
+# c. 使用单拷贝同源基因构建物种树
+mkdir -p ~/working/12.genome_comparison/c.species_tree
+cd ~/working/12.genome_comparison/c.species_tree
+python3 orthomcl_extract_ortholog_seqs.py  --out_directory orthologGroups_CDS --species_ratio 1 --single_copy_species_ratio 0.5 --copy_num 10 --max_seq_length 6000 ../b.OrthoFinder/groups.txt ../b.OrthoFinder/compliantCDS/
+python3 orthomcl_extract_ortholog_seqs.py --out_directory orthologGroups_Protein --species_ratio 1 --single_copy_species_ratio 0.5 --copy_num 10 --max_seq_length 6000 --compliantFasta_dir_for_calculating_seq_length  ../b.OrthoFinder/compliantCDS ../b.OrthoFinder/groups.txt ../b.OrthoFinder/compliantProtein
+sed -i 's/\*$//; s/\*/X/g' orthologGroups_Protein/*.fasta
+basename -a -s .fasta orthologGroups_Protein/*.fasta > orthologGroups.txt
+# 对单拷贝同源进行进行多序列比对
+for i in `cat orthologGroups.txt`; do
+   echo "/opt/biosoft/mafft/bin/linsi orthologGroups_Protein/$i.fasta > orthologGroups_Protein/$i.fasta.align"  
+done > command.linsi.list
+ParaFly -c command.linsi.list -CPU 8
+# 将Protein序列比对结果转换为Codon序列比对结果
+for i in `cat orthologGroups.txt`
+do
+    echo "python3 protein_alignment_cds_alignemnt.py orthologGroups_Protein/$i.fasta.align orthologGroups_CDS/$i.fasta > orthologGroups_CDS/$i.fasta.align"  
+done > command.protein_alignment_cds_alignemnt.list
+ParaFly -c command.protein_alignment_cds_alignemnt.list -CPU 8  ls orthologGroups_CDS/*.fasta.align| wc -l
+###如果失败则使用 sh command.protein_alignment_cds_alignemnt.list
+# 对Codon序列比对结果进行保守区块提取
+while IFS= read -r i; do
+    i=$(echo "$i" | xargs)
+    echo "/opt/biosoft/Gblocks_0.91b/Gblocks orthologGroups_CDS/$i.fasta.align -t=c && { [ -f orthologGroups_CDS/$i.fasta.align-gb ] && echo '$i CDS completed' || echo '$i CDS failed' >&2; } || echo '$i CDS skipped' >&2"
+    echo "/opt/biosoft/Gblocks_0.91b/Gblocks orthologGroups_Protein/$i.fasta.align -t=p && { [ -f orthologGroups_Protein/$i.fasta.align-gb ] && echo '$i Protein completed' || echo '$i Protein failed' >&2; } || echo '$i Protein skipped' >&2"
+done < orthologGroups.txt > command.Gblocks.list
+ParaFly -c command.Gblocks.list -CPU 8
+# 将各个同源基因家族的多序列比对结果转换为Phylip格式
+for i in $(cat orthologGroups.txt); do
+    sed 's/^\(>[^[:space:]]*\).*/\1/; s/ //g' "orthologGroups_CDS/$i.fasta.align-gb" > "orthologGroups_CDS/$i.fasta.align-gb.fasta"
+done
+for i in `cat orthologGroups.txt`
+do
+    echo "/opt/biosoft/RAxML-8.2.12/usefulScripts/convertFasta2Phylip.sh orthologGroups_CDS/$i.fasta.align-gb.fasta > orthologGroups_CDS/$i.phy"
+done > command.convert_fasta_phylip.list
+ParaFly -c command.convert_fasta_phylip.list -CPU 8
+# 整合所有单拷贝同源基因的Codon序列比对结果，并使用ML算法构建物系统发育树
+python3 get_all_codon_alignments.py orthologGroups_CDS/*.align-gb > allSingleCopyOrthologsAlign.Codon.fasta
+mkdir FastTree
+cd FastTree
+mafft --auto --thread 16 ../allSingleCopyOrthologsAlign.Codon.fasta > aligned.fasta  #thread在服务器能承受的范围越大越好
+FastTree -nt -gtr -gamma aligned.fasta > tree_abbr.FastTree
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
