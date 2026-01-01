@@ -402,6 +402,85 @@ for i in `cat orthologGroups.txt`; do
     echo "python3 ~/rmpl/calculating_omega_by_codeml.py --omega_for_PSG 1.0 orthologGroups_CDS/$i.phy tree.txt > dnds_ML/$i.txt 2> dnds_ML/$i.stats"
 done > command.calculating_omega_by_ML.list
 parallel -j 8 < command.calculating_omega_by_ML.list
+rename PSGyes PSGyes.dnds_ML orthologGroups_CDS/*.phy.PSGyes
+basename -a orthologGroups_CDS/*.phy.PSGyes.dnds_ML 2>/dev/null | grep -o 'OG[0-9]*' > PSG_ML.list
+cat PSG_yn00.list PSG_ML.list | sort | uniq > candidate_PSG.list
+# rm -rf */dnds_* dnds_ML dnds_yn00
+# (3) 使用branch-site model对候选基因进行正选择分析
+# 确定待分析的目标分枝
+grep -o '\w*' tree.txt | sed '/^$/d' | while read word; do echo "${word}:${word}"; done > branches.txt
+echo "Agaricales:laame,plost
+Boletales:parub,sccit
+Polyporales:lasul,phgig" >> branches.txt
+# 使用branch-site model对目标分枝上的候选基因进行正选择分析
+for x in `cat branches.txt`
+ do
+     y=$x
+    y=${y/*:/}
+     x=${x/:*/}
+     y=${y/*:/}
+     mkdir -p BS_$x/
+     for i in `cat candidate_PSG.list`; do
+         echo "paml_branch-site_model_analysis.pl --target_branch_species $y orthologGroups_CDS/$i.phy tree.txt BS_$x/$i > BS_$x/$i.p"
+     done
+ done > command.paml_branch-site_model.list
+parallel -j 8 < command.paml_branch-site_model.list
+# 统计各分枝的正选择基因信息
+while read line; do
+    x="${line%:*}" && y="${line#*:}" && cd "BS_$x" 2>/dev/null && for p in *.p; do
+        [ -f "$p" ] && og="${p%.p}" && result=$(awk -F'\t' '$1 <= 0.05 || $2 == "BEB_Significance_YES" {print $1"\t"$2; exit}' "$p" 2>/dev/null) && \
+        [[ -n "$result" ]] && echo -e "$x\t$og\t$result"
+    done; cd ..; 
+done < branches.txt | grep -v NULL > results.PSG.branches
+awk '{count[$1]++} END {for (key in count) print key "\t" count[key]}' results.PSG.branches > results.PSG.branches.stats
+
+
+# g.使用MCScanX进行共线性区块分析
+mkdir -p ~/working/12.genome_comparison/g.MCScanX
+cd ~/working/12.genome_comparison/g.MCScanX
+# 准备2个物种基因组的蛋白质序列文件和GFF文件
+ln -s ../a.preparing_data/laame.geneModels.gff3 ./
+ln -s ../a.preparing_data/laame.protein.fasta ./
+ln -s ../a.preparing_data/laame.genome.fasta ./
+ln -s ../a.preparing_data/plost.geneModels.gff3 ./
+ln -s ../a.preparing_data/plost.protein.fasta ./
+ln -s ../a.preparing_data/plost.genome.fasta ./
+cat laame.protein.fasta plost.protein.fasta > all.fasta
+sed -i 's/\*$//; s/\*/X/g' all.fasta
+diamond makedb --in all.fasta --db all
+diamond blastp --db all --query all.fasta --out diamond.out --outfmt 5 --sensitive --max-target-seqs 100 --evalue 1e-5 --id 10 --tmpdir /dev/shm --threads 16
+python3 ~/rmpl/parsing_blast_result.py --no-header --max-hit-num 100 --evalue 1e-6 --identity 0.5 --suject-coverage 0.5 --query-coverage 0.5 diamond.out > data/input.blast
+awk '$3 == "gene" && /ID=/ {
+    match($0, /ID=([^;\t]+)/, arr)
+    if (arr[1] != "") {
+        print $1 "\t" arr[1] "\t" $4 "\t" $5
+    }
+}' plost.geneModels.gff3 laame.geneModels.gff3 > data/input.gff
+MCScanX data/input
+grep -v -P "plost.*plost" data/input.collinearity | grep -P "plost" > data/input.collinearity_interspecific
+python3 mcscanx_stats_blocks.py data/input.collinearity_interspecific > data/input.collinearity_interspecific.stats
+grep -P "plost.*plost" data/input.collinearity > data/input.collinearity_intraspecific
+python3 mcscanx_stats_blocks.py data/input.collinearity_intraspecific > data/input.collinearity_intraspecific.stats
+circos_from_MCScanX_out.pl --out-ref-WGD out_WGD --ref-gff3 plost.geneModels.gff3 --ref-fasta plost.genome.fasta --query-gff3 laame.geneModels.gff3 --query-fasta laame.genome.fasta --ref-label PO --query-label LA --min-block-size 5 data/input.collinearity
+cd out
+/opt/biosoft/circos-0.69-6/bin/circos -conf circos.conf
+cd ../out_WGD
+/opt/biosoft/circos-0.69-6/bin/circos -conf circos.conf
+cd ..
+
+
+# h. 使用Mummer对两个基因组进行比较
+mkdir -p ~/working/12.genome_comparison/h.Mummer
+~/working/12.genome_comparison/h.Mummer
+cp /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/Malassezia_sympodialis.genome_V01.fasta ./
+cp /home/train/00.incipient_data/data_for_genome_assembling/assemblies_of_Malassezia_sympodialis/idba.fasta ./
+python3 ~/rmpl/para_nucmer.py --CPU 8 Malassezia_sympodialis.genome_V01.fasta idba.fasta > out.delta
+/opt/biosoft/mummer-4.0.0beta2/bin/nucmer -c 200 -g 200 -p out Malassezia_sympodialis.genome_V01.fasta idba.fasta
+/opt/biosoft/mummer-4.0.0beta2/bin/delta-filter -i 95 -r -q out.delta > out.rq.delta
+/opt/biosoft/mummer-4.0.0beta2/bin/show-coords -c -d -l -I 95 -L 10000 -r out.rq.delta > out.show
+/opt/biosoft/mummer-4.0.0beta2/bin/mummerplot -f -l -p out -s large -t png out.delta
+gnuplot out.gp
+
 
 
 
