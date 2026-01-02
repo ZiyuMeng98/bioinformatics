@@ -126,6 +126,16 @@ cd ..
 mkdir iqtree
 cd iqtree
 /opt/biosoft/iqtree/iqtree-2.2.0-Linux/bin/iqtree2 -s ../FastTree/aligned.fasta -m GTR+G -bb 1000 -nt 64 -mem 300G
+# 复制带bootstrap支持率的共识树
+cp mytree.contree tree_abbr.iqtree     # cp aligned.fasta.treefile tree_abbr.iqtree
+# 创建完整名称版本
+cp tree_abbr.iqtree tree_fullName.iqtree
+# 替换缩写为完整名称
+cut -f 1,2 ../../a.preparing_data/source.txt | while read abbr full; do
+    sed -i "s/$abbr/$full/g" tree_fullName.iqtree
+done
+# 复制到上级目录
+cp tree*.iqtree ../
 """
 # 真实数据处理时，数据量较大时，推荐按如下步骤使用raxmlHPC-HYBRID-AVX进行并行化计算
 # export PKG_CONFIG_PATH=/opt/sysoft/mpich-3.3/lib/pkgconfig:$PKG_CONFIG_PATH
