@@ -3,7 +3,9 @@ cd ~/working/13.qiime/
 
 # 载入QIIME 2运行环境
 PATH=/opt/biosoft/miniconda3_for_QIIME2/bin:$PATH
-source activate qiime2-2021.4
+conda create -n qiime2=2024.10.1
+source activate qiime2=2024.10.1
+conda install -c qiime2 -c conda-forge -c bioconda qiime2=2024.10.1
 source tab-qiime
 
 # 1. 准备QIIME 2的输入文件。
